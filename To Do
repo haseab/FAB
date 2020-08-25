@@ -1,0 +1,12 @@
+To Do List to Optimize this code:
+- Add bm_strategy to test code
+- Add exchange API access to an example exchange
+
+
+Ideas
+- Risk zones
+- Filtering daterange based on a common price movement
+- Voting system on timeframes
+- Dependent prices?
+- Sensitivity to seasonal or monthly or yearly changes?
+- incorporating unsupervised algorithm to gather patterns in price
