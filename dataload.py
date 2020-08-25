@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib.pyplot import figure
 import matplotlib.pyplot as plt
 
-class Backtester():
+class DataLoad():
 
     def __init__(self):
         pass
