@@ -1,1 +1,2 @@
 Possible Features:
+- Compare SPX500(FXCM) with SPX and backtest
