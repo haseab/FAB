@@ -17,3 +17,4 @@ def timeframe_setter(dataframe, timeFrame=77):
                             range(0, len(dataframe['Close']) - timeFrame + 1, timeFrame)])
     return df
     #returns foo
+    #ignore above, return bar
