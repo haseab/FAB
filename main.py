@@ -6,3 +6,5 @@ def get_range(dataframe, start_date='2018-4-1', end_date='2018-5-1'):
     common = dataframe[dataframe['Datetime'].isin(date_list)]
     return common
 
+def foo():
+    return "hi"
