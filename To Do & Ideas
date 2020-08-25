@@ -1,6 +1,7 @@
 To Do List to Optimize this code:
 - Add bm_strategy to test code
-- Add exchange API access to an example exchange
+- Add exchange API access to an example exchange (Most probably a crypto exchange because of the simplicity)
+- Find more efficient way to do trade_statistic calculation (in backtest.py)
 
 
 Ideas
