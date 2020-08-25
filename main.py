@@ -13,7 +13,7 @@ def timeframe_setter(dataframe, timeFrame=77):
     df['High'] = np.array(
         [max(dataframe['High'][i:timeFrame + i]) for i in range(0, len(dataframe['High']), timeFrame)])
     df['Low'] = np.array([min(dataframe['Low'][i:timeFrame + i]) for i in range(0, len(dataframe['Low']), timeFrame)])
-    df.drop(df.tail(1).index, inplace=True)
     df['Close'] = np.array([dataframe['Close'].iloc[timeFrame - 1 + i] for i in
                             range(0, len(dataframe['Close']) - timeFrame + 1, timeFrame)])
     return df
+    #returns foo
