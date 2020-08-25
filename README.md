@@ -1,5 +1,4 @@
-# 
-FAB - Financial Asset Bot
+# FAB - Financial Asset Bot
 
 ## What is this Code About?
 This program has two functions
