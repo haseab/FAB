@@ -1,4 +1,7 @@
 def bm_strategy(instance, dataframe, size, size2, size3, size4, size5, tf, start, end):
+    """ NOTE: This is my own personal strategy, I will not be documenting too much since there is
+    no use in explaining what my code does. The point of the algorithm is to use your own code"""
+    
     def sma(dataframe, size):
         return round(dataframe['Close'].rolling(size).mean(), 2)
 
