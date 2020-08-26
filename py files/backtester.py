@@ -1,9 +1,9 @@
 class Backtester():
-    def __init__(self, data, strategy):
+    def __init__(self, strategy):
         """
         Parameters:
             strategy: The trading strategy used for analysis
-            Returns: list of strings, each string in the following format:\
+            Returns: list of list of strings, each string in the following format:
 
             '{'Buy'/'Short'/'Buyclose'/'Shortclose'} on {date} at Price {price} -Rule#{number}'
         """
@@ -16,6 +16,33 @@ class Backtester():
 
 
     def trade_stats(self, list_of_trades):
+        """
+        This method will analyze the list of trades, and determine a set of KPI's
+        
+        The way this will be done is to put all of the buying transactions in one list,
+        and all of the selling transactions in another list. The lists of should have 
+        the same size, with the indexes matching up with each other.
+        So for example, in the buying list, capitalbought, capitalbough[1] is the buy order and
+        capitalsold[1] is the sell order. 
+       
+        Parameters:
+            strategy: The trading strategy used for analysis
+        Returns:
+            str, with the following template
+            
+              - Number of Trades
+              - The inital and final price of the asset given the start & end date
+              - Profit Margin if Asset was held from start date until the end date
+              Algorith X statistics:
+                  - Number of Trades Won/Lost: 
+                  - Win Percentage
+                  - Risk-Reward Ratio
+                  - Average Profit per Trade
+                  - Average Loss per Trade
+                  - Profit Margin: 
+
+        """
+        #Setting initial conditions for analysis
         initial_capital, capital = 30000, 30000
         capitalbought, capitalsold = [], []
         trades_won, trades_lost = 0, 0
@@ -26,25 +53,32 @@ class Backtester():
         run, drawdown = 1, 1
         run_counter, drawdown_counter = 0, 0
         max_run, max_drawdown = 1, 1
-
+        
+        #Quick check for empty list 
         if list_of_trades == []:
             print("Not enough data")
 
+        #Splitting each word in the list 
         slice = [list_of_trades[i][0].split() for i in range(len(list_of_trades))]
 
+        #Making sure that the first trade is not a close but an actual trade
         if slice[0][0] != "Buyclose" or slice[0][0] != "Shortclose":
+            #Iterating over and seeing what was a buy and sell order. Putting it
+            #accordingly into the right list
             for x in range(len(slice)):
                 if "Buy" == slice[x][0] or "Shortclose" == slice[x][0]:
                     capitalbought.append((slice[x][6]))
                 if "Short" == slice[x][0] or "Buyclose" == slice[x][0]:
                     capitalsold.append((slice[x][6]))
 
+        #Checking if in case a trade was added without a corresponding close.
+        #If it is, then it is popped from the list (because it will be last)
         if len(capitalbought) > len(capitalsold):
             capitalbought.pop()
-
         elif len(capitalbought) < len(capitalsold):
             capitalsold.pop()
 
+        #Collecting metrics on profitability, largest profit/loss, trades won/lost, gross profit/loss 
         for i in range(len(capitalbought)):
             profitability = float(capitalsold[i]) / float(capitalbought[i])
             capital *= profitability
@@ -64,6 +98,7 @@ class Backtester():
                 trades_won += 1
                 # print(trade_index)
 
+        #Determining the longest run/drawdown     
         for i in range(len(trade_index)):
             if trade_index[i] < 1:
                 if drawdown_counter == 0:
@@ -93,7 +128,7 @@ class Backtester():
                     run *= trade_index[i]
                 if max_run < run:
                     max_run = run
-
+        
         average_win = gross_profit ** (1 / trades_won)
         average_loss = gross_loss ** (1 / trades_lost)
 
