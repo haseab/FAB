@@ -1,31 +1,21 @@
 class Backtester():
     def __init__(self, data, strategy, start, end, tf):
+        """
+        Parameters:
+            strategy: The trading strategy used for analysis
+            Returns: list of strings, each string in the following format:\
+
+            '{'Buy'/'Short'/'Buyclose'/'Shortclose'} on {date} at Price {price} -Rule#{number}'
+        """
         self.dataframe = data
         self.strategy = strategy
         self.start = start
         self.end = end
         self.timeframe = tf
 
-    def list_of_trades(self, trading_strategy):
-
-        # Getting range of data from start to end date
-        dfraw = get_range(self.dataframe, self.start, self.end)
-        # Setting the timeframe of the trade
-        df = timeframe_setter(df, tf)
-        # Creating a variable for each column since it will be easier to refer in your trades
-        date, price, low, high = df['Datetime'], df['Close'], df['Low'], df['High']
-
-        def execute_strategy(trading_strategy):
-            """
-            Parameters:
-                strategy: The trading strategy used for analysis
-                Returns: list of strings, each string in the following format:\
-
-                '{'Buy'/'Short'/'Buyclose'/'Shortclose'} on {date} at Price {price} -Rule#{number}'
-            """
-            return trading_strategy
-
-        return execute_strategy(trading_strategy)
+    def strategy(start, end, tf, args):
+        """INSERT STRATEGY HERE"""
+        pass
 
     def trade_stats(self, list_of_trades):
         initial_capital, capital = 30000, 30000
@@ -47,9 +37,9 @@ class Backtester():
         if slice[0][0] != "Buyclose" or slice[0][0] != "Shortclose":
             for x in range(len(slice)):
                 if "Buy" == slice[x][0] or "Shortclose" == slice[x][0]:
-                    capitalbought.append((slice[x][9]))
+                    capitalbought.append((slice[x][6]))
                 if "Short" == slice[x][0] or "Buyclose" == slice[x][0]:
-                    capitalsold.append((slice[x][9]))
+                    capitalsold.append((slice[x][6]))
 
         if len(capitalbought) > len(capitalsold):
             capitalbought.pop()
@@ -122,3 +112,4 @@ class Backtester():
             Win Percentage: {round(trades_won / (trades_lost + trades_won), 5)}
             Profit Factor: {round(capital / initial_capital, 3)}x
         """
+        return statement
