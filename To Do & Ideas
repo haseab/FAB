@@ -4,6 +4,7 @@ To Do List to Optimize this code:
 - Find more efficient way to do trade_statistic calculation (in backtest.py)
 
 
+
 Ideas
 - Risk zones
 - Filtering daterange based on a common price movement
