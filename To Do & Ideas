@@ -1,5 +1,4 @@
 To Do List to Optimize this code:
-- Add bm_strategy to test code
 - Add exchange API access to an example exchange (Most probably a crypto exchange because of the simplicity)
 - Find more efficient way to do trade_statistic calculation (in backtest.py)
 
@@ -12,3 +11,4 @@ Ideas
 - Dependent prices?
 - Sensitivity to seasonal or monthly or yearly changes?
 - incorporating unsupervised algorithm to gather patterns in price
+
