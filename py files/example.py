@@ -1,7 +1,7 @@
 from dataload import DataLoad
 from backtester import Backtester
 from bm_strategy import *
-import pandas as pd
+
 
 csvUrl = "bitcoin_data_2018_1_1_to_2018_5_1.csv"
 
