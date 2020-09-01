@@ -1,6 +1,6 @@
 # FAB - Financial Asset Bot
 
-## What Problem is This Solving?
+### What Problem is This Solving?
 I started trading in 2016. Not only trading, I was **day** trading. Every trader knows the rollercoaster ride of emotions that comes with trading. You sell too early, you forget to put a stop, you forget that you even put a trade, you name it! We get emotional and just put up trades just for the sake of being in on the action. Well, after tens of thousands of dollars lost due to a lack of strategy and discipline when trading, I learned that it's best to not personally trade ever again. 
 
 But then I had an idea. Yes **I personally** will never trade ever again. But why can't a bot that I created trade for me? In fact programming a bot to trade will automatically solve the biggest two issues as to why I was losing money: No adherence to a strategy, and being emotional.  
@@ -9,13 +9,22 @@ This bot not only comes with the trading capability, but with backtesting capabi
 
 Ever since I have automated my trading, I have been consistently making profit. I made **110%** in the crypto markets last year alone. 
 
+## Table of Contents
+- [Description](#Description)
+- [Examples](#Examples)
+  - [Importing Modules](#Importing-Modules)
+  - [Loading Data](#Loading-Data)
+  - [Loading Strategy](#Loading-Strategy)
+  - [Backtesting Execution](#Backtesting-Execution)
+
+
 ### Description
 This program has two functions
 
-1. Backtesting Functionality - Testing algorithms with historical data 
+1. **Backtesting Functionality** - Testing algorithms with historical data 
   - The Backtesting Functionality requires a CSV of historical 1 min data of any financial asset. It can then apply the trading algorithm onto that testing data as a measure to see what trades would have been executed in the past, given that the algorithm was running. 
     
-2. Trading Functionality - Executing trades on the basis of those algorithms
+2. **Trading Functionality** - Executing trades on the basis of those algorithms
   - This program can connect to an exchange using an API key, and make REST API calls to grab information or to make trades based off of the algorithms decisions
   
 
