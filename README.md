@@ -10,7 +10,10 @@ This bot not only comes with the trading capability, but with backtesting capabi
 Ever since I have automated my trading, I have been consistently making profit. I made **110%** in the crypto markets last year alone. 
 
 ## Table of Contents
-- [Description](#Description)
+- [Overview](#Overview)
+  - [Description](#Description)
+  - [Requirements](#Requirements)
+
 - [Examples](#Examples)
   - [Importing Modules](#Importing-Modules)
   - [Loading Data](#Loading-Data)
@@ -18,6 +21,7 @@ Ever since I have automated my trading, I have been consistently making profit. 
   - [Backtesting Execution](#Backtesting-Execution)
 
 
+##Overview
 ### Description
 This program has two functions
 
@@ -26,7 +30,13 @@ This program has two functions
     
 2. **Trading Functionality** - Executing trades on the basis of those algorithms
   - This program can connect to an exchange using an API key, and make REST API calls to grab information or to make trades based off of the algorithms decisions
-  
+ 
+### Requirements
+- This code was made with Python 3.8
+- The following non-native modules were used:
+  - [matplotlib](#https://pypi.org/project/matplotlib/)
+  - [pandas](#https://pypi.org/project/pandas/)
+  - [numpy](#https://pypi.org/project/numpy/)
 
 An example algorithm will be shown to illustrate how both of these functionalities are executed. This original algorithm is very profitable! Making about 110% profit in one year in the Bitcoin markets from Apr 2019 to Apr. 2020. However this code should mainly serve as a wrapper for your own trading strategy.
 
@@ -39,6 +49,7 @@ Each module is a different class (except for the last one, which is a function).
 - **bm_strategy:** My personal trading method added as an example to execute the backtester
 - **Backtester function:** to use the strategy on historical data to see historical performance
 
+Importing the python files in this project
 <pre>
 from dataload import DataLoad
 from backtester import Backtester
