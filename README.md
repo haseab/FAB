@@ -22,7 +22,7 @@ Ever since I have automated my trading, I have been consistently making profit. 
   - Connnecting to Exchange (coming soon)
   - Automatically putting Buy/Sell orders (coming soon)
 
-##Overview
+## Overview
 ### Description
 This program has two functions
 
