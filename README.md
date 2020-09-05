@@ -3,11 +3,11 @@
 ### What Problem is This Solving?
 I started trading in 2016. Not only trading, I was **day** trading. Every trader knows the rollercoaster ride of emotions that comes with trading. You sell too early, you forget to put a stop, you forget that you even put a trade, you name it! We get emotional and just put up trades just for the sake of being in on the action. Well, after tens of thousands of dollars lost due to a lack of strategy and discipline when trading, I learned that it's best to not personally trade ever again. 
 
-But then I had an idea. Yes **I personally** will never trade ever again. But why can't a bot that I created trade for me? In fact programming a bot to trade will automatically solve the biggest two issues as to why I was losing money: No adherence to a strategy, and being emotional.  
+But then I had an idea. Yes **I will personally** never trade ever again. But why can't a bot that I created trade for me? In fact programming a bot to trade will automatically solve the biggest two issues as to why I was losing money: No adherence to a strategy, and being emotional.  
 
 This bot not only comes with the trading capability, but with backtesting capability which is one of the most powerful implementations. It can test any strategy over the history of any asset, using algorithms. The code here is modular enough for machine learning and AI algorithms to be plugged in as well and backtested. 
 
-Ever since I have automated my trading, I have been consistently making profit. I made **110%** in the crypto markets last year alone. 
+Ever since I have automated my trading, I have been consistently making profit. I made **100%** in the crypto markets last year alone. 
 
 ## Table of Contents
 - [Overview](#Overview)
@@ -19,7 +19,8 @@ Ever since I have automated my trading, I have been consistently making profit. 
   - [Loading Data](#Loading-Data)
   - [Loading Strategy](#Loading-Strategy)
   - [Backtesting Execution](#Backtesting-Execution)
-
+  - Connnecting to Exchange (coming soon)
+  - Automatically putting Buy/Sell orders (coming soon)
 
 ##Overview
 ### Description
