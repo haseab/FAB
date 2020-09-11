@@ -1,6 +1,7 @@
 ### To Do List to Optimize this code:
 1. [ ] Add exchange API access to an example exchange (Most probably a crypto exchange because of the simplicity)
 2. [ ] Find more efficient way to do trade_statistic calculation (in backtest.py)
+3. [ ] Find a way to allow minimal input from user (simple rules) and then it gives output of backtesting
 
 
 
