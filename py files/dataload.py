@@ -13,8 +13,16 @@ class DataLoad():
         pass
 
     def load_csv(self, csvUrl):
-        """Function used to load 1-minute historical candlestick data with a given csv url
-            The important columns are the ones that create the candlestick (open, high, low, close) """
+        """
+        Function used to load 1-minute historical candlestick data with a given csv url
+        The important columns are the ones that create the candlestick (open, high, low, close) 
+        Then the data will be transformed into a pandas DataFrame
+        
+        Parameters: 
+            csvUrl - url of a csv file 
+        Returns: pd.DataFrame
+            
+        """
         # Reading CSV File containing 1 min candlestick data
         data = pd.read_csv(csvUrl, index_col='Timestamp')
         # Converting Timestamp numbers into a new column of readable dates
