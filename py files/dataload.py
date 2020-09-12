@@ -1,10 +1,6 @@
-from statistics import mean
-import time
-import timeit
 import pandas as pd
 from datetime import datetime
 import numpy as np
-from matplotlib.pyplot import figure
 import matplotlib.pyplot as plt
 
 class DataLoad():

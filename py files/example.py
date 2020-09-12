@@ -11,4 +11,5 @@ strategy = bm_strategy(load1, data,7,77,231,880,2354,77,"2018-01-01","2018-05-01
 
 backtest_bm = Backtester(data,strategy)
 
+
 print(backtest_bm.trade_stats(strategy))
