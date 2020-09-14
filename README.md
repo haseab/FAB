@@ -42,7 +42,7 @@ This program has two functions
 An example algorithm will be shown to illustrate how both of these functionalities are executed. This original algorithm is very profitable! Making about 110% profit in one year in the Bitcoin markets from Apr 2019 to Apr. 2020. However this code should mainly serve as a wrapper for your own trading strategy.
 
 ## Examples
-please check 'example.py' for a similar example
+please check 'example.py' for a similar example.
 
 ### Importing Modules
 Each module is a different class (except for the last one, which is a function). 
@@ -65,7 +65,7 @@ load1 = DataLoad()
 data = load1.load_csv(csvUrl)
 </pre>
 
-If the data that has been loaded ever needs to be visualized, that can also be done by the following command
+If the data ever needs to be visualized, that can also be done by the following command
 
 <pre> data.graph_data()</pre>
 
