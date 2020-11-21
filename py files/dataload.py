@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib.pyplot import figure
 import matplotlib.pyplot as plt
 
-class DataLoad():
+class DataLoader():
 
     def __init__(self):
         pass
