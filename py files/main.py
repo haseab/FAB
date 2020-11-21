@@ -1,7 +1,7 @@
-from dataload import DataLoad
+from dataload import DataLoader
 from backtester import Backtester
 
 csvUrl = "INSERT URL"
 
-data = DataLoad()
+data = DataLoader()
 print(data.load_csv(csvUrl))
