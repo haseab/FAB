@@ -46,8 +46,8 @@ class DataLoader():
                         columns: ['Open', 'High', 'Low, 'Close']. Converting to a 60 minute timeframe is
                         handled differently for every column of the candlestick:
 
-                    Close - Since all that matters is the close value every 'tf' minutes, you can skip
-                        every 'tf' minutes.
+                    Close - Since all that matters is the close candle value for every 'tf' minutes, you can skip
+                        every 'tf' points of data.
                         Ex.
                             >>> dataframe['Close'] = [4.50, 4.60, 4.65, 4.44, 4.21, 4.54, 4.10]
                             >>> timeFrame = 2
