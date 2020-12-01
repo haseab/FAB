@@ -1,10 +1,6 @@
-from statistics import mean
-import time
-import timeit
 import pandas as pd
 from datetime import datetime
 import numpy as np
-from matplotlib.pyplot import figure
 import matplotlib.pyplot as plt
 
 class DataLoader():
@@ -13,20 +9,30 @@ class DataLoader():
         pass
 
     def load_csv(self, csvUrl):
-        """Function used to load 1-minute historical candlestick data with a given csv url
-            The important columns are the ones that create the candlestick (open, high, low, close) """
+        """
+        Function used to load 1-minute historical candlestick data with a given csv url
+        The important columns are the ones that create the candlestick (open, high, low, close) 
+        Then the data will be transformed into a pandas DataFrame
+        
+        Parameters: 
+            csvUrl - url of a csv file 
+        Returns: 
+            pd.DataFrame
+            
+        """
         # Reading CSV File containing 1 min candlestick data
         data = pd.read_csv(csvUrl, index_col='Timestamp')
-        # Converting Timestamp numbers into a new column of readable dates
+        # Converting UNIX Timestamp numbers into a new column of readable dates (e.g Sep 14 2020) 
         data['Datetime'] = np.array([datetime.fromtimestamp(i) for i in data.index])
         # Organizing columns in the proper order
         data = data[['Datetime', 'Open', 'High', 'Low', 'Close']]
         return data
 
-    def get_range(dataframe, start_date='2018-4-1', end_date='2018-5-1'):
+    def get_range(self, dataframe, start_date='2018-4-1', end_date='2018-5-1'):
         """Returns the range of 1-min data within specified start & end date from the entire dataset
             The intention is to take create a range of datetime objects, convert the dates into the
-            same format as the csv, and then use a pandas '.isin' method to get the range """
+            same format as the csv, and then use a pandas '.isin' method to get the range
+        """
         # Creating a list of datetime objects starting form start date to the end date
         datetimes = pd.date_range(start_date, end_date, freq='min').to_pydatetime()
         # Converting datetime objects into a string, matching the CSV format
@@ -35,10 +41,12 @@ class DataLoader():
         common = dataframe[dataframe['Datetime'].isin(date_list)]
         return common
 
-    def timeframe_setter(dataframe, tf=77):
-        """Converts minute candlestick data into the timeframe(tf) of choice.
-            Parameters:
-                dataframe: the dataframe that is being passed as an argument
+    def timeframe_setter(self, dataframe, tf=77):
+        """
+        Converts minute candlestick data into the timeframe(tf) of choice.
+        
+        Parameters:
+            dataframe: the pd.DataFrame that is being passed as an argument
 
                 tf: The combination of 1-min candles into one value. Number of 1-min candles combined
                         is the timeframe value itself.
@@ -82,16 +90,24 @@ class DataLoader():
             If the range of tf is not even (such as having a tf=2 but only 5 elements), then the
             last value will be dropped
 
+            Returns: pd.DataFrame
             """
-        # Creating a new dataframe so that the size of the rows of the new dataframe will be the same as the new columns
+        # Creating a new dataframe where every nth row will be selected (where n = tf) 
         df = dataframe.iloc[::tf].copy()
         # Grouping the high and low values according to the range of the timeframe
-        df['High'] = np.array([max(dataframe['High'][i + 66:tf + i]) for i in range(0, len(dataframe['High']), tf)])
-        df['Low'] = np.array([min(dataframe['Low'][i:timeFrame + i]) for i in range(0, len(dataframe['Low']), tf)])
+        df['High'] = np.array([max(dataframe['High'][i:tf + i]) for i in range(0, len(dataframe['High']), tf)])
+        df['Low'] = np.array([min(dataframe['Low'][i:tf + i]) for i in range(0, len(dataframe['Low']), tf)])
         # Dropping the last value
         df.drop(df.tail(1).index, inplace=True)
-        # Selecting every nth value in the list, where n is the timeframe
-        df['Close'] = np.array(
-            [dataframe['Close'].iloc[tf - 1 + i] for i in range(0, len(dataframe['Close']) - tf + 1, tf)])
+        # Selecting every nth value in the list (where n = tf)
+        df['Close'] = np.array([dataframe['Close'].iloc[tf - 1 + i] for i in range(0, len(dataframe['Close']) - tf + 1, tf)])
         return df
 
+    def graph_data(self):
+        """
+        Graphs the selected data on a wide chart
+        Returns: plot 
+        """
+        plt.rcParams['figure.figsize'] = (40, 15)
+        graph = plt.plot(price.index, price.values, '#848987', linewidth='0.75')
+        return graph
