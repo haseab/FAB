@@ -1,3 +1,4 @@
+
 class Analyzer():
     #     def __init__(self, tradehistory):
     #         self.history =

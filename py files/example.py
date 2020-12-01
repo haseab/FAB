@@ -1,6 +1,7 @@
-from dataload import DataLoad
-from backtester import Backtester
-from bm_strategy import *
+from dataloader import DataLoader
+from illustrator import Illustrator
+from strategy_executor import StrategyExecutor
+from analyzer import Analyzer
 
 # Instantiating
 load1 = DataLoader()
@@ -9,12 +10,11 @@ illustrate1 = Illustrator()
 executor1 = StrategyExecutor()
 
 # Setting vars
-data = load1.load_csv(csvUrl)
 csvUrl = "bitcoin_data_2018_1_1_to_2018_5_1.csv"
+data = load1.load_csv(csvUrl)
 start = "2018-01-01"
 end = "2018-05-01"
 tf = 77
-backtest_bm = Backtester(data,strategy)
 dfraw = load1.get_range(data, start, end)
 df = load1.timeframe_setter(dfraw, tf)
 
@@ -22,7 +22,7 @@ df = load1.timeframe_setter(dfraw, tf)
 illustrate1.graph_data(dfraw)
 
 # Getting Trade History
-trade_history = backtest.fab_strategy(df)
+trade_history = executor1.fab_strategy(df)
 
 # Getting Statistics
 analyze1.calculate_statistics(trade_history)

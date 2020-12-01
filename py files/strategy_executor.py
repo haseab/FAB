@@ -1,26 +1,24 @@
 class StrategyExecutor():
-    # def __init__(self, data, strategy, start, end, tf):
-    #     """
-    #     Parameters:
-    #         strategy: The trading strategy used for analysis
-    #         Returns: list of strings, each string in the following format:\
-    #
-    #         '{'Buy'/'Short'/'Buyclose'/'Shortclose'} on {date} at Price {price} -Rule#{number}'
-    #     """
-    #     self.dataframe = data
-    #     self.strategy = strategy
-    #     self.start = start
-    #     self.end = end
-    #     self.timeframe = tf
+    #     def __init__(self, data, strategy):
+    #         """
+    #         Parameters:
+    #             strategy: The trading strategy used for analysis
+    #             Returns: list of strings, each string in the following format:\
 
-    def fab_strategy(self, data, size=7, size2=77, size3=231, size4=880, size5=2240):
+    #             '{'Buy'/'Short'/'Buyclose'/'Shortclose'} on {date} at Price {price} -Rule#{number}'
+    #         """
+    #         self.dataframe = data
+    #         self.strategy = strategy
+
+    def fab_strategy(self, df, size=7, size2=77, size3=231, size4=880, size5=2240):
         def sma(dataframe, size):
             return round(dataframe['Close'].rolling(size).mean(), 2)
 
         date = [str(df['Datetime'].iloc[i]) for i in range(len(df['Datetime']))]
         price, low, high = df['Close'].values, df['Low'].values, df['High'].values
         green, orange, black, blue, pink = sma(df, size).values, sma(df, size2).values, sma(df, size3).values, sma(df,
-            size4).values, sma(df, size5).values
+                                                                                                                   size4).values, sma(
+            df, size5).values
         trade_history = ['List of Trades']
         num_of_trades = 0
 
@@ -72,3 +70,7 @@ class StrategyExecutor():
                     trade_history.append(["Short", "Enter", date[i + 1], price[i + 1], "Rule 3"])
 
         return trade_history
+
+
+
+

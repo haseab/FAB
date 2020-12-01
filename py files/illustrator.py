@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+
 class Illustrator():
     #     def __init__(self, data):
     #         self.data - data
