@@ -1,4 +1,4 @@
-class Backtester():
+class StrategyExecutor():
     # def __init__(self, data, strategy, start, end, tf):
     #     """
     #     Parameters:

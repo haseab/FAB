@@ -2,99 +2,86 @@ class Analyzer():
     #     def __init__(self, tradehistory):
     #         self.history =
 
-    def trade_stats(self, list_of_trades):
-        initial_capital, capital = 30000, 30000
-        capitalbought, capitalsold = [], []
-        trades_won, trades_lost = 0, 0
-        gross_profit, gross_loss = 1, 1
-        largest_profit, largest_loss = 1, 1
-        average_win, average_loss = 1, 1
-        trade_index = []
-        run, drawdown = 1, 1
-        run_counter, drawdown_counter = 0, 0
-        max_run, max_drawdown = 1, 1
-
-        if list_of_trades == []:
-            print("Not enough data")
-
-        slice = [list_of_trades[i][0].split() for i in range(len(list_of_trades))]
-
-        if slice[0][0] != "Buyclose" or slice[0][0] != "Shortclose":
-            for x in range(len(slice)):
-                if "Buy" == slice[x][0] or "Shortclose" == slice[x][0]:
-                    capitalbought.append((slice[x][6]))
-                if "Short" == slice[x][0] or "Buyclose" == slice[x][0]:
-                    capitalsold.append((slice[x][6]))
-
-        if len(capitalbought) > len(capitalsold):
-            capitalbought.pop()
-
-        elif len(capitalbought) < len(capitalsold):
-            capitalsold.pop()
-
-        for i in range(len(capitalbought)):
-            profitability = float(capitalsold[i]) / float(capitalbought[i])
-            capital *= profitability
-            trade_index.append(profitability)
-            # print(profitability)
-            if profitability > 1:
-                gross_profit *= profitability
-            elif profitability < 1:
-                gross_loss *= profitability
-            if profitability > largest_profit:
-                largest_profit = profitability
-            elif profitability < largest_loss:
-                largest_loss = profitability
-            if capitalbought[i] > capitalsold[i]:
-                trades_lost += 1
-            elif capitalsold[i] > capitalbought[i]:
-                trades_won += 1
-                # print(trade_index)
+    def calculate_longest_run(self, trade_index):
+        longest_run, longest_counter = 1, 0
+        current_run, current_counter = 1, 0
 
         for i in range(len(trade_index)):
             if trade_index[i] < 1:
-                if drawdown_counter == 0:
-                    if drawdown != 1:
-                        if max_drawdown > drawdown:
-                            max_drawdown = drawdown
-                        drawdown = 1
-                    run_counter = 0
-                    drawdown_counter = trade_index[i]
-                    drawdown *= trade_index[i]
-                if drawdown_counter == trade_index[i - 1]:
-                    drawdown_counter = trade_index[i]
-                    drawdown *= trade_index[i]
-                if max_drawdown > drawdown:
-                    max_drawdown = drawdown
+                longest_run = max(longest_run, current_run)
+                longest_counter = max(longest_counter, current_counter)
+                current_run, current_counter = 1, 0
+                continue
+            current_run *= trade_index[i]
+            current_counter += 1
+
+        return longest_run, longest_counter
+
+    def calculate_longest_drawdown(self, trade_index):
+        longest_drawdown, longest_counter = 1, 0
+        current_drawdown, current_counter = 1, 0
+
+        for i in range(len(trade_index)):
             if trade_index[i] > 1:
-                if run_counter == 0:
-                    if run != 1:
-                        if max_run < run:
-                            max_run = run
-                        run = 1
-                    drawdown_counter = 0
-                    run_counter = trade_index[i]
-                    run *= trade_index[i]
-                if run_counter == trade_index[i - 1]:
-                    run_counter = trade_index[i]
-                    run *= trade_index[i]
-                if max_run < run:
-                    max_run = run
+                longest_drawdown = min(longest_drawdown, current_drawdown)
+                longest_counter = max(longest_counter, current_counter)
+                current_drawdown, current_counter = 1, 0
+                continue
+            current_drawdown *= trade_index[i]
+            current_counter += 1
 
-        average_win = gross_profit ** (1 / trades_won)
-        average_loss = gross_loss ** (1 / trades_lost)
+        return longest_drawdown, longest_counter
 
-        statement = f"""
-        Price of asset went from {format(round(float(capitalbought[0]), 2), ",")} to {format(float(capitalsold[-1]), ",")} 
+    def calculate_statistics(self, trade_history):
+        self.trade_history = trade_history
+        self.initial_capital, self.capital = 30000, 30000
+        self.trades_won, self.trades_lost = 0, 0
+        self.gross_profit, self.gross_loss = 1, 1
+        self.largest_profit, self.largest_loss = 1, 1
+        self.trades = []
+
+        if trade_history == []:
+            print("Not enough data to provide statistics")
+
+        for i in range(1, len(trade_history), 2):
+            one_trade = trade_history[i:i + 2]
+            if one_trade[0][0] == "Short":
+                profitability = 2 - one_trade[1][3] / one_trade[0][3]
+            elif one_trade[0][0] == "Long":
+                profitability = one_trade[1][3] / one_trade[0][3]
+            self.capital *= profitability
+            self.trades.append(round(profitability, 4))
+            if profitability > 1:
+                self.trades_won += 1
+                self.gross_profit *= profitability
+            elif profitability < 1:
+                self.trades_lost += 1
+                self.gross_loss *= profitability
+            self.largest_loss = min(profitability, self.largest_loss)
+            self.largest_profit = max(profitability, self.largest_profit)
+
+        self.longest_run, self.win_streak = self.calculate_longest_run(self.trades)
+        self.longest_drawdown, self.lose_streak = self.calculate_longest_drawdown(self.trades)
+        self.average_win = self.gross_profit ** (1 / self.trades_won)
+        self.average_loss = self.gross_loss ** (1 / self.trades_lost)
+        return
+
+    def summarize_statistics(self):
+        statement = f""" 
+        Price of the Traded Asset went from {format(round(float(self.trade_history[1][3]), 2), ",")} to {format(float(self.trade_history[-1][3]), ",")} 
+        If you had {format(self.initial_capital, ",")}, normally it would have turned into: {format(round(self.initial_capital * self.trade_history[-1][3] / self.trade_history[1][3], 2), ",")}
+        However, using the FAB method, it would turn into: {format(round(self.capital, 5), ",")}
 
         Strategy statistics:
-            Number of Trades: {trades_lost + trades_won} 
-            Number of Trades Won - Trades Lost: {trades_won} - {trades_lost} 
-            Largest Single Profit - Largest Single Loss: {round(largest_profit, 5)} - {round(largest_loss, 5)}
-            Largest Run - Largest Drawdown: {round(max_run, 5)} - {round(max_drawdown, 5)}
-            Profit - Loss Per Trade: {round(average_win, 5)} - {round(average_loss, 5)}
-            Risk-Reward: {round(((average_win - 1) * 100) / ((1 - average_loss) * 100), 5)}
-            Win Percentage: {round(trades_won / (trades_lost + trades_won), 5)}
-            Profit Factor: {round(capital / initial_capital, 3)}x
+            Number of Trades:                  {self.trades_lost + self.trades_won} 
+            Trades Won vs Trades Lost:         {self.trades_won} vs {self.trades_lost} 
+            Largest Profit vs Largest Loss:    {round(self.largest_profit, 5)} vs {round(self.largest_loss, 5)}
+            Win Streak vs Losing Streak:       {self.win_streak} vs {self.lose_streak}
+            Largest Run vs Largest Drawdown:   {round(self.longest_run, 5)} vs {round(self.longest_drawdown, 5)}
+            Profit vs Loss Per Trade:          {round(self.average_win, 5)} vs {round(self.average_loss, 5)}
+            Average Risk-Reward:               {round(((self.average_win - 1) * 100) / ((1 - self.average_loss) * 100), 5)}
+            Minimum Risk-Reward:               {round((self.longest_run - 1) / (1 - self.longest_drawdown), 5)}
+            Win Percentage:                    {round(self.trades_won / (self.trades_lost + self.trades_won), 5)}
+            Profit Factor:                     {round(self.capital / self.initial_capital, 3)}x
         """
         return statement

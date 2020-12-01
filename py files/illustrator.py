@@ -6,5 +6,5 @@ class Illustrator():
         """Graphs the selected data on a wide chart
         Returns: plot """
         plt.rcParams['figure.figsize'] = (40, 15)
-        graph = plt.plot(price.index, price.values, '#848987', linewidth='0.75')
+        graph = plt.plot(price.index, price['Close'].values, '#848987', linewidth='0.75')
         return graph
