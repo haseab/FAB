@@ -1,4 +1,3 @@
-
 class Analyzer():
     #     def __init__(self, tradehistory):
     #         self.history =
@@ -15,7 +14,6 @@ class Analyzer():
                 continue
             current_run *= trade_index[i]
             current_counter += 1
-
         return longest_run, longest_counter
 
     def calculate_longest_drawdown(self, trade_index):
@@ -41,10 +39,12 @@ class Analyzer():
         self.largest_profit, self.largest_loss = 1, 1
         self.trades = []
 
-        if trade_history == []:
-            print("Not enough data to provide statistics")
+        if self.trade_history == []:
+            return "Not enough data to provide statistics"
+        if self.trade_history[-1][1] == "Enter":
+            self.trade_history = self.trade_history[:-1]
 
-        for i in range(1, len(trade_history), 2):
+        for i in range(1, len(self.trade_history), 2):
             one_trade = trade_history[i:i + 2]
             if one_trade[0][0] == "Short":
                 profitability = 2 - one_trade[1][3] / one_trade[0][3]

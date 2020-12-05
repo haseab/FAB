@@ -92,7 +92,7 @@ class DataLoader:
             [dataframe['Close'].iloc[tf - 1 + i] for i in range(shift, len(dataframe['Close']) - tf + 1, tf)])
         return df
 
-    def timeframe_setter_v2(self, dataframe, tf=7, shift=8):
+    def timeframe_setter_v2(self, dfraw, tf=7, shift=8):
         """Horizontal way of appending the data """
         start = time.time()
         shift, tf = 8, 77
@@ -102,10 +102,10 @@ class DataLoader:
         hidf = dfraw.loc[:, "High"]
         lodf = dfraw.loc[:, "Low"]
         while count < 1000:
-            df2 = df2.append({"Datetime": df.iloc[0, 0], "Open": df.iloc[0, 1], "High": max(hidf[low:high]),
-                              "Low": min(lodf[low:high]), "Close": df.iloc[-1, 4]}, ignore_index=True)
+            df2 = df2.append({"Datetime": dfraw.iloc[0, 0], "Open": dfraw.iloc[0, 1], "High": max(hidf[low:high]),
+                              "Low": min(lodf[low:high]), "Close": dfraw.iloc[-1, 4]}, ignore_index=True)
             low += 77
             high += 77
             count += 1
         end = time.time()
-        return df
+        return df2
