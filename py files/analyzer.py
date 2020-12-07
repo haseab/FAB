@@ -47,9 +47,9 @@ class Analyzer():
         for i in range(1, len(self.trade_history), 2):
             one_trade = trade_history[i:i + 2]
             if one_trade[0][0] == "Short":
-                profitability = 2 - one_trade[1][3] / one_trade[0][3]
+                profitability = 0.999 * (2 - one_trade[1][3] / one_trade[0][3])
             elif one_trade[0][0] == "Long":
-                profitability = one_trade[1][3] / one_trade[0][3]
+                profitability = 0.999 * (one_trade[1][3] / one_trade[0][3])
             self.capital *= profitability
             self.trades.append(round(profitability, 4))
             if profitability > 1:
@@ -69,6 +69,7 @@ class Analyzer():
 
     def summarize_statistics(self):
         statement = f""" 
+        Data is provided from {self.trade_history[1][2]} to {self.trade_history[-1][2]}
         Price of the Traded Asset went from {format(round(float(self.trade_history[1][3]), 2), ",")} to {format(float(self.trade_history[-1][3]), ",")} 
         If you had {format(self.initial_capital, ",")}, normally it would have turned into: {format(round(self.initial_capital * self.trade_history[-1][3] / self.trade_history[1][3], 2), ",")}
         However, using the FAB method, it would turn into: {format(round(self.capital, 5), ",")}

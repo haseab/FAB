@@ -3,9 +3,11 @@ import pandas as pd
 from datetime import datetime
 import numpy as np
 
-class DataLoader:
+
+class DataLoader():
+
     def __init__(self):
-        pass
+        self.data = None
 
     def load_csv(self, csvUrl):
         """Function used to load 1-minute historical candlestick data with a given csv url
@@ -14,7 +16,7 @@ class DataLoader:
         data = pd.read_csv(csvUrl, index_col='Timestamp')
         # Converting Timestamp numbers into a new column of readable dates
         data['Datetime'] = np.array([datetime.fromtimestamp(i) for i in data.index])
-        data = data[['Datetime', 'Open', 'High', 'Low', 'Close']]
+        data = data[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']]
         return data
 
     def get_range(self, dataframe, start_date='2018-4-1', end_date='2018-5-1'):
@@ -22,12 +24,9 @@ class DataLoader:
             The intention is to take create a range of datetime objects, convert the dates into the
             same format as the csv, and then use a pandas '.isin' method to get the range
         """
-        # Creating a list of datetime objects starting form start date to the end date
-        datetimes = pd.date_range(start_date, end_date, freq='min').to_pydatetime()
-        # Converting datetime objects into a string, matching the CSV format
-        date_list = [date.strftime('%Y-%m-%d %H:%M:%S') for date in datetimes]
-        common = dataframe[dataframe['Datetime'].isin(date_list)]
-        return common
+        start_date = int(time.mktime(datetime.strptime(start_date, "%Y-%m-%d").timetuple()))
+        end_date = int(time.mktime(datetime.strptime(end_date, "%Y-%m-%d").timetuple()))
+        return dataframe.loc[start_date:end_date]
 
     def timeframe_setter(self, dataframe, tf=77, shift=8):
         """ Vertical way of appending data
