@@ -1,7 +1,7 @@
 from datetime import datetime
 from dataloader import DataLoader
 from analyzer import Analyzer
-from strategy_executor import StrategyExecutor
+from fab_strategy import FabStrategy
 
 
 class Backtester():
@@ -41,27 +41,27 @@ class Backtester():
 
         for i in range(231, len(df) - 1):
             if strategy.rule_1_buy_enter(i) and self.trade_history[-1][1] != "Enter":
-                self.trade_history.append(["Long", "Enter", date[i + 1], strategy.price[i + 1], "Rule 1"])
+                self.trade_history.append(["Long", "Enter", date[i], strategy.price[i], "Rule 1"])
             elif strategy.rule_1_buy_exit(i) and self.trade_history[-1][:2] == ["Long", 'Enter']:
-                self.trade_history.append(["Long", "Exit", date[i + 1], strategy.price[i + 1], "Rule 1"])
+                self.trade_history.append(["Long", "Exit", date[i], strategy.price[i], "Rule 1"])
             elif strategy.rule_1_short_enter(i) and self.trade_history[-1][1] != "Enter":
-                self.trade_history.append(["Short", "Enter", date[i + 1], strategy.price[i + 1], "Rule 1"])
+                self.trade_history.append(["Short", "Enter", date[i], strategy.price[i], "Rule 1"])
             elif strategy.rule_1_short_exit(i) and self.trade_history[-1][:2] == ["Short", 'Enter']:
-                self.trade_history.append(["Short", "Exit", date[i + 1], strategy.price[i + 1], "Rule 1"])
+                self.trade_history.append(["Short", "Exit", date[i], strategy.price[i], "Rule 1"])
             elif strategy.rule_2_buy_enter(i) and self.trade_history[-1][1] != "Enter":
-                self.trade_history.append(["Long", "Enter", date[i + 1], strategy.black[i + 1], "Rule 2"])
+                self.trade_history.append(["Long", "Enter", date[i], strategy.black[i], "Rule 2"])
             elif strategy.rule_2_buy_stop(i) and self.trade_history[-1][-1] == "Rule 2" and self.trade_history[-1][
                                                                                             :2] == ["Long", 'Enter']:
-                self.trade_history.append(["Long", "Exit", date[i + 1], strategy.price[i + 1], "Rule 2"])
+                self.trade_history.append(["Long", "Exit", date[i], strategy.price[i], "Rule 2"])
             elif strategy.rule_2_short_enter(i) and self.trade_history[-1][1] != "Enter":
-                self.trade_history.append(["Short", "Enter", date[i + 1], strategy.black[i + 1], "Rule 2"])
+                self.trade_history.append(["Short", "Enter", date[i], strategy.black[i], "Rule 2"])
             elif strategy.rule_2_short_stop(i) and self.trade_history[-1][:2] == ["Short", 'Enter'] and \
                     self.trade_history[-1][-1] == "Rule 2":
-                self.trade_history.append(["Short", "Exit", date[i + 1], strategy.price[i + 1], "Rule 2"])
+                self.trade_history.append(["Short", "Exit", date[i], strategy.price[i], "Rule 2"])
             elif strategy.rule_3_buy_enter(i) and self.trade_history[-1][1] != "Enter":
-                self.trade_history.append(["Long", "Enter", date[i + 1], strategy.price[i + 1], "Rule 3"])
+                self.trade_history.append(["Long", "Enter", date[i], strategy.price[i], "Rule 3"])
             elif strategy.rule_3_short_enter(i) and self.trade_history[-1][1] != "Enter":
-                self.trade_history.append(["Short", "Enter", date[i + 1], strategy.price[i + 1], "Rule 3"])
+                self.trade_history.append(["Short", "Enter", date[i], strategy.price[i], "Rule 3"])
 
         analyze_backtest = Analyzer()
         analyze_backtest.calculate_statistics(self.trade_history)

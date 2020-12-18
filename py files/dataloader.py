@@ -16,6 +16,7 @@ class DataLoader():
         data = pd.read_csv(csvUrl, index_col='Timestamp')
         # Converting Timestamp numbers into a new column of readable dates
         data['Datetime'] = np.array([datetime.fromtimestamp(i) for i in data.index])
+        data['Volume'] = data['Volume'].astype(float)
         data = data[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']]
         return data
 
@@ -81,14 +82,23 @@ class DataLoader():
 
         # Creating a new dataframe so that the size of the rows of the new dataframe will be the same as the new columns
         df = dataframe.iloc[shift::tf].copy()
+        dataframe['Volume'] = dataframe['Volume'].astype(float)
+
         # Grouping the high and low values according to the range of the timeframe
         df['High'] = [max(dataframe['High'][i:tf + i]) for i in range(shift, len(dataframe['High']), tf)]
         df['Low'] = [min(dataframe['Low'][i:tf + i]) for i in range(shift, len(dataframe['Low']), tf)]
+        df['Volume'] = [sum(dataframe['Volume'][i:tf + i]) for i in range(shift, len(dataframe['Volume']), tf)]
+
+        # Selecting every nth value in the list, where n is the timeframe
+        try:
+            df['Close'] = [dataframe['Close'].iloc[i:tf + i].iloc[-1] for i in
+                           range(shift, len(dataframe['Close']), tf)]
+        except IndexError:
+            print('error')
+
         # Dropping the last value
         df.drop(df.tail(1).index, inplace=True)
-        # Selecting every nth value in the list, where n is the timeframe
-        df['Close'] = np.array(
-            [dataframe['Close'].iloc[tf - 1 + i] for i in range(shift, len(dataframe['Close']) - tf + 1, tf)])
+
         return df
 
     def timeframe_setter_v2(self, dfraw, tf=7, shift=8):

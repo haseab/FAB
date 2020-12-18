@@ -1,18 +1,33 @@
 from binance.client import Client
 import pandas as pd
+from dataloader import DataLoader
 
-cclass Trader():
+class Trader():
     def __init__(self):
         self.symbol = None
         self.client = None
         self.capital = None
+        self.live_trade_history = pd.DataFrame(
+            columns=["orderId", "side", "type", "closePosition", "symbol", "origQty", "avgPrice", "price", "stopPrice",
+                     "time"])
         self.tf = 77
         self.df = None
 
+    def _update_data(self, diff):
+        last_price = pd.DataFrame(
+            self.client.get_historical_klines(symbol=symbol, interval="1m", start_str=f"{diff + 1} minutes ago UTC"),
+            columns=["Timestamp", "Open", "High", "Low", "Close", "Volume", "Timestamp_end", "", "", "", "",
+                     ""]).set_index("Timestamp")
+        last_price['Datetime'] = np.array([datetime.fromtimestamp(i / 1000) for i in last_price.index])
+        last_price = last_price[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
+        load1 = DataLoader()
+        last_price = load1.timeframe_setter(last_price, self.tf, 0)
+        self.df = self.df.append(last_price)
+
     def load_account(self):
         info = pd.read_csv('binance_api.txt').set_index('Name')
-        API_KEY = info.loc["API_KEY","Key"]
-        SECRET = info.loc["SECRET","Key"]
+        API_KEY = info.loc["API_KEY", "Key"]
+        SECRET = info.loc["SECRET", "Key"]
         self.client = Client(API_KEY, SECRET)
         self.capital = int(float(self.client.futures_account_balance()[0]['balance'])) + 20000
         return "Welcome Haseab"
@@ -21,43 +36,172 @@ cclass Trader():
         self.tf = tf
         return self.tf
 
+    def enter_market(self, symbol, side, leverage):
+        last_price = float(
+            self.client.get_historical_klines(symbol=symbol, interval="1m", start_str="150 seconds ago UTC")[-1][4])
+        enterMarketParams = {
+            'symbol': symbol,
+            'side': side,
+            'type': 'MARKET',
+            'quantity': round(sig_fig(self.capital * leverage / (last_price), 4), 3)
+        }
+        self.latest_trade = self.client.futures_create_order(**enterMarketParams)
+        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
+        self.live_trade_history = self.live_trade_history.append(pd.DataFrame([self.latest_trade_info]) \
+                                                                     [["orderId", "side", "type", "closePosition",
+                                                                       "symbol", "origQty", "avgPrice", "price",
+                                                                       "stopPrice", "time"]])
+        return self.live_trade_history
+
+    def exit_market(self, symbol):
+        position_amount = float(
+            [i["positionAmt"] for i in t.client.futures_position_information() if i['symbol'] == symbol][0])
+        side = "BUY" if position_amount < 0 else "SELL"
+        exitMarketParams = {
+            'symbol': symbol,
+            'side': side,
+            'type': 'MARKET',
+            'quantity': abs(position_amount)
+        }
+        self.latest_trade = self.client.futures_create_order(**exitMarketParams)
+        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
+        self.live_trade_history = self.live_trade_history.append(pd.DataFrame([self.latest_trade_info]) \
+                                                                     [["orderId", "side", "type", "closePosition",
+                                                                       "symbol", "origQty", "avgPrice", "price",
+                                                                       "stopPrice", "time"]])
+        return self.live_trade_history
+
+    def stop_market(self, symbol, price):
+        position_amount = float(
+            [i["positionAmt"] for i in t.client.futures_position_information() if i['symbol'] == symbol][0])
+        side = "BUY" if position_amount < 0 else "SELL"
+        stopMarketParams = {
+            'symbol': symbol,
+            'side': side,
+            'type': 'STOP_MARKET',
+            'stopPrice': price,
+            'quantity': abs(position_amount)
+        }
+        self.latest_trade = self.client.futures_create_order(**stopMarketParams)
+        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
+        self.live_trade_history = self.live_trade_history.append(pd.DataFrame([self.latest_trade_info]) \
+                                                                     [["orderId", "side", "type", "closePosition",
+                                                                       "symbol", "origQty", "avgPrice", "price",
+                                                                       "stopPrice", "time"]])
+        return self.latest_trade_info
+
+    def enter_limit(self, symbol, side, price, leverage):
+        enterLimitParams = {
+            'symbol': symbol,
+            'side': side,
+            'type': "LIMIT",
+            'price': price,
+            'timeInForce': "GTC",
+            'quantity': round(sig_fig(self.capital * leverage / (last_price), 4), 3)
+        }
+        self.latest_trade = self.client.futures_create_order(**enterLimitParams)
+        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
+        return self.latest_trade_info
+
+    def exit_limit(self, symbol, price):
+        position_amount = float(
+            [i["positionAmt"] for i in t.client.futures_position_information() if i['symbol'] == symbol][0])
+        side = "BUY" if position_amount < 0 else "SELL"
+        exitLimitParams = {
+            'symbol': symbol,
+            'side': side,
+            'type': "LIMIT",
+            'price': price,
+            'timeInForce': "GTC",
+            'quantity': abs(position_amount)
+        }
+        self.latest_trade = self.client.futures_create_order(**exitLimitParams)
+        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
+        return self.latest_trade_info
+
     def set_asset(self, symbol):
         """Set Symbol of the ticker"""
         self.symbol = symbol
-        map_tf = {1:"1m",3:"3m", 5:"5m", 15:"15m", 30:"30m", 60:"1h", 120:"2h", 240:"4h", 360:"6h", 480:"8h"}
+        map_tf = {1: "1m", 3: "3m", 5: "5m", 15: "15m", 30: "30m", 60: "1h", 120: "2h", 240: "4h", 360: "6h", 480: "8h"}
 
-        start_string = datetime.fromtimestamp(time.time()-self.tf*235*60).strftime("%Y-%m-%d")
+        start_string = datetime.fromtimestamp(time.time() - self.tf * 235 * 60).strftime("%Y-%m-%d")
 
-        if self.tf in [1,3,5,15,30,60,120,240,360,480]: #12H, 1D, 3D, 1W, 1M are also recognized
-            self.df = pd.DataFrame(client.get_historical_klines(symbol=symbol, interval=map_tf[self.tf], start_str = start_string), \
-                               columns = ["Timestamp","Open","High","Low", "Close","Volume","Timestamp_end","","","","",""])
+        if self.tf in [1, 3, 5, 15, 30, 60, 120, 240, 360, 480]:  # 12H, 1D, 3D, 1W, 1M are also recognized
+            self.df = pd.DataFrame(
+                self.client.get_historical_klines(symbol=symbol, interval=map_tf[self.tf], start_str=start_string),
+                columns=["Timestamp", "Open", "High", "Low", "Close", "Volume", "Timestamp_end", "", "", "", "", ""])
+            self.df.drop(self.df.tail(1).index, inplace=True)
             self.df = self.df.reset_index(drop=True).set_index("Timestamp")
         else:
-            self.df = pd.DataFrame(client.get_historical_klines(symbol=symbol, interval="1m", start_str = start_string), \
-                               columns = ["Timestamp","Open","High","Low", "Close","Volume","Timestamp_end","","","","",""])
+            self.df = pd.DataFrame(
+                self.client.get_historical_klines(symbol=symbol, interval="1m", start_str=start_string),
+                columns=["Timestamp", "Open", "High", "Low", "Close", "Volume", "Timestamp_end", "", "", "", "", ""])
             load1 = DataLoader()
             self.df = load1.timeframe_setter(self.df, self.tf).reset_index(drop=True).set_index("Timestamp")
 
-        self.df['Datetime'] = np.array([datetime.fromtimestamp(i/1000) for i in self.df.index])
-        self.df = self.df[["Datetime", "Open","High","Low", "Close","Volume"]]
+        self.df['Datetime'] = np.array([datetime.fromtimestamp(i / 1000) for i in self.df.index])
+        self.df = self.df[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
         return f"Symbol changed to {self.symbol}"
 
-    def start_trading(self):
-        pass
-#         temp, row = [], [None,None,None,None,None]
-#         count = 0
-#         self.start = True
-#         while self.start != False:
-#             if round(time.time()%60,1) == 0 and row:
-#                 row = client.get_historical_klines(symbol="BTCUSDT", interval="1m", start_str="150 seconds ago UTC")[-1]
-#                 dfrow = pd.DataFrame([[row[0],datetime.fromtimestamp(row[0]/1000), row[1],row[2],row[3],row[4],row[5]]], \
-#                                      columns = ["Timestamp","Datetime", "Open","High","Low", "Close","Volume"])
-#                 dfrow = dfrow.set_index("Timestamp")
-#                 run rule 2
-#                 count +=1
+    def make_row(self, high=[], low=[], volume=[], count=0):
+        row = self.client.get_historical_klines(symbol="BTCUSDT", interval="1m", start_str="150 seconds ago UTC")[-1]
+        if count == 0:
+            open_price = row[1]
+        timestamp, close = row[0], row[4]
+        high.append(float(row[2]))
+        low.append(float(row[3]))
+        volume.append(float(row[5]))
 
-#             if count > self.tf:
-#                 if (df.tail(-1).reset_index() == dfrow.reset_index()).all().all() == False:
-#                     df.append(dfrow)
-#                 run rule 3
-#                 count = 0
+        dfrow = pd.DataFrame([[timestamp, datetime.fromtimestamp(timestamp / 1000), open_price, max(high), min(low),
+                               close, sum(volume)]],
+                             columns=["Timestamp", "Datetime", "Open", "High", "Low", "Close", "Volume"])
+        dfrow = dfrow.set_index("Timestamp")
+        return dfrow, high, low, volume
+
+    def load_asset(self, df):
+        self.df = df
+        return self.df
+
+    def start_trading(self, strategy):
+        count = 0
+        high, low, volume = [], [], []
+        self.start = True
+        self.trade_history = ["List of Trades"]
+        strategy.load_data(self.df)
+        strategy.create_objects()
+
+        while self.start != False:
+            last_date = self.df.iloc[-1]["Datetime"].to_pydatetime()
+            current_date = datetime.now()
+            diff = (current_date - last_date - timedelta(minutes=t.tf)).seconds // 60
+
+            if round(time.time() % 60, 1) == 0 and diff <= self.tf:
+                dfrow, high, low, volume = self.make_row(high, low, volume)
+                print(dfrow)
+                load1 = DataLoader()
+                strategy.load_data(self.df.append(dfrow))
+                strategy.create_objects()
+
+                print(f"{self.tf - diff} minutes left")
+
+                #                 if strategy.rule_2_buy_enter(-1) and self.trade_history[-1][1] != "Enter":
+                #                     self.trade_history.append(["Long","Enter",date[i+1], strategy.black[i+1], "Rule 2"])
+                #                 elif strategy.rule_2_buy_stop(-1) and self.trade_history[-1][-1] == "Rule 2" and self.trade_history[-1][:2] == ["Long",'Enter']:
+                #                     self.trade_history.append(["Long","Exit",date[i+1], strategy.price[i+1], "Rule 2"])
+                #                 elif strategy.rule_2_short_enter(-1) and self.trade_history[-1][1] != "Enter":
+                #                     self.trade_history.append(["Short","Enter",date[i+1], strategy.black[i+1], "Rule 2"])
+                #                 elif strategy.rule_2_short_stop(-1) and self.trade_history[-1][:2] == ["Short",'Enter'] and self.trade_history[-1][-1] == "Rule 2":
+                #                     self.trade_history.append(["Short","Exit",date[i+1], strategy.price[i+1], "Rule 2"])
+                #                     count +=1
+
+                time.sleep(55)
+
+            elif diff >= self.tf:
+                print("worked")
+                #                 if (df.tail(-1).reset_index() == dfrow.reset_index()).all().all() == False:
+                # #                     df = df.append(dfrow)
+                #                 run rule 3
+                self._update_data(round(diff, 0))
+                high, low, volume = [], [], []
+                count = 0
+                print('next')
