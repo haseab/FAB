@@ -1,7 +1,10 @@
 from binance.client import Client
 import pandas as pd
 from dataloader import DataLoader
+from datetime import datetime, timedelta
 import math
+import time
+import numpy as np
 
 
 class Trader():
@@ -16,7 +19,7 @@ class Trader():
         self.df = None
 
     def _update_data(self, diff):
-        last_price = pd.DataFrame(self.client.get_historical_klines(symbol=symbol, interval="1m",
+        last_price = pd.DataFrame(self.client.get_historical_klines(symbol=self.symbol, interval="1m",
                                                                     start_str=f"{math.floor(diff) + 1} minutes ago UTC"), \
                                   columns=["Timestamp", "Open", "High", "Low", "Close", "Volume", "Timestamp_end", "",
                                            "", "", "", ""]).set_index("Timestamp")
@@ -28,7 +31,7 @@ class Trader():
         self.df = self.df.append(last_price).drop_duplicates()
 
     def load_account(self):
-        info = pd.read_csv('binance_api.txt').set_index('Name')
+        info = pd.read_csv(r'C:\Users\owner\Desktop\Python\adm\binance_api.txt').set_index('Name')
         API_KEY = info.loc["API_KEY", "Key"]
         SECRET = info.loc["SECRET", "Key"]
         self.client = Client(API_KEY, SECRET)
@@ -185,13 +188,13 @@ class Trader():
         while self.start != False:
             last_date = self.df.iloc[-1]["Datetime"].to_pydatetime()
             current_date = datetime.now()
-            diff = (current_date - last_date - timedelta(minutes=t.tf)).seconds / 60
+            diff = (current_date - last_date - timedelta(minutes=self.tf)).seconds/60
 
             if round(time.time() % 60, 1) == 0 and diff <= self.tf:
 
                 dfrow, high, low, volume, open_price, open_date = self.make_row(high, low, volume, count, open_price,
                                                                                 open_date)
-                #                 print(dfrow)
+                print(dfrow)
 
                 strategy.load_data(self.df.append(dfrow))
                 strategy.create_objects()

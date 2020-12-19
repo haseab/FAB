@@ -4,7 +4,7 @@ from trader import Trader
 from backtester import Backtester
 from analyzer import Analyzer
 from binance.client import Client
-from fab_strategy import FabStrategy()
+from fab_strategy import FabStrategy
 
 
 # Instantiating
@@ -16,7 +16,7 @@ leverage = 1/1000
 
 # Setting Initial Conditions
 
-t.set_timeframe(77)
+t.set_timeframe(1)
 t.set_asset('BTCUSDT')
 
 # Start Trading
