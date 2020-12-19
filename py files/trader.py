@@ -1,6 +1,7 @@
 from binance.client import Client
 import pandas as pd
 from dataloader import DataLoader
+import math
 
 
 class Trader():

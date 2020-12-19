@@ -3,22 +3,22 @@ import pandas as pd
 from datetime import datetime
 import numpy as np
 
-
 class DataLoader():
 
     def __init__(self):
         self.data = None
 
-    def load_csv(self, csvUrl):
+    def load_csv(self,csvUrl):
         """Function used to load 1-minute historical candlestick data with a given csv url
             The important columns are the ones that create the candlestick (open, high, low, close) """
-        # Reading CSV File containing 1 min candlestick data
-        data = pd.read_csv(csvUrl, index_col='Timestamp')
-        # Converting Timestamp numbers into a new column of readable dates
+        #Reading CSV File containing 1 min candlestick data
+        data = pd.read_csv(csvUrl, index_col = 'Timestamp')
+        #Converting Timestamp numbers into a new column of readable dates
         data['Datetime'] = np.array([datetime.fromtimestamp(i) for i in data.index])
-        data['Volume'] = data['Volume'].astype(float)
-        data = data[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']]
+        data[["Open","High","Low","Close","Volume"]] = data[["Open","High","Low","Close","Volume"]].astype(float)
+        data = data[['Datetime', 'Open', 'High', 'Low', 'Close','Volume']]
         return data
+
 
     def get_range(self, dataframe, start_date='2018-4-1', end_date='2018-5-1'):
         """Returns the range of 1-min data within specified start & end date from the entire dataset
@@ -29,7 +29,8 @@ class DataLoader():
         end_date = int(time.mktime(datetime.strptime(end_date, "%Y-%m-%d").timetuple()))
         return dataframe.loc[start_date:end_date]
 
-    def timeframe_setter(self, dataframe, tf=77, shift=8):
+
+    def timeframe_setter(self, dataframe, tf=77, shift =8):
         """ Vertical way of appending data
         Converts minute candlestick data into the timeframe(tf) of choice.
             Parameters:
@@ -80,24 +81,20 @@ class DataLoader():
             Returns: dataframe
             """
 
-        # Creating a new dataframe so that the size of the rows of the new dataframe will be the same as the new columns
+        #Creating a new dataframe so that the size of the rows of the new dataframe will be the same as the new columns
         df = dataframe.iloc[shift::tf].copy()
-        dataframe['Volume'] = dataframe['Volume'].astype(float)
+        dataframe[["Open","High","Low","Close","Volume"]] = dataframe[["Open","High","Low","Close","Volume"]].astype(float)
 
-        # Grouping the high and low values according to the range of the timeframe
-        df['High'] = [max(dataframe['High'][i:tf + i]) for i in range(shift, len(dataframe['High']), tf)]
-        df['Low'] = [min(dataframe['Low'][i:tf + i]) for i in range(shift, len(dataframe['Low']), tf)]
-        df['Volume'] = [sum(dataframe['Volume'][i:tf + i]) for i in range(shift, len(dataframe['Volume']), tf)]
+        #Grouping the high and low values according to the range of the timeframe
+        df['High'] = [max(dataframe['High'][i:tf+i]) for i in range(shift,len(dataframe['High']),tf)]
+        df['Low'] = [min(dataframe['Low'][i:tf+i]) for i in range(shift,len(dataframe['Low']),tf)]
+        df['Volume'] = [sum(dataframe['Volume'][i:tf+i]) for i in range(shift,len(dataframe['Volume']),tf)]
 
-        # Selecting every nth value in the list, where n is the timeframe
-        try:
-            df['Close'] = [dataframe['Close'].iloc[i:tf + i].iloc[-1] for i in
-                           range(shift, len(dataframe['Close']), tf)]
-        except IndexError:
-            print('error')
+        #Selecting every nth value in the list, where n is the timeframe
+        df['Close'] = [dataframe['Close'].iloc[i:tf+i].iloc[-1] for i in range(shift,len(dataframe['Close']),tf)]
 
-        # Dropping the last value
-        df.drop(df.tail(1).index, inplace=True)
+        #Dropping the last value, this get's rid of candles that aren't complete yet
+        df.drop(df.tail(1).index,inplace=True)
 
         return df
 

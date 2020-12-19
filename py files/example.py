@@ -1,30 +1,23 @@
 from dataloader import DataLoader
 from illustrator import Illustrator
-from strategy_executor import StrategyExecutor
+from trader import Trader
+from backtester import Backtester
 from analyzer import Analyzer
+from binance.client import Client
+from fab_strategy import FabStrategy()
+
 
 # Instantiating
-load1 = DataLoader()
-analyze1 = Analyzer()
-illustrate1 = Illustrator()
-executor1 = StrategyExecutor()
+t = Trader()
+t.load_account()
 
 # Setting vars
-csvUrl = "bitcoin_data_2018_1_1_to_2018_5_1.csv"
-data = load1.load_csv(csvUrl)
-start = "2018-01-01"
-end = "2018-05-01"
-tf = 77
-dfraw = load1.get_range(data, start, end)
-df = load1.timeframe_setter(dfraw, tf)
+leverage = 1/1000
 
-# Graphing Data
-illustrate1.graph_data(dfraw)
+# Setting Initial Conditions
 
-# Getting Trade History
-trade_history = executor1.fab_strategy(df)
+t.set_timeframe(77)
+t.set_asset('BTCUSDT')
 
-# Getting Statistics
-analyze1.calculate_statistics(trade_history)
-print(analyze1.summarize_statistics())
-
+# Start Trading
+t.start_trading(FabStrategy())
