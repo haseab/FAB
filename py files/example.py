@@ -11,9 +11,6 @@ from fab_strategy import FabStrategy
 t = Trader()
 t.load_account()
 
-# Setting vars
-leverage = 1/1000
-
 # Setting Initial Conditions
 
 t.set_timeframe(1)

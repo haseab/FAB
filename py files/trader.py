@@ -18,6 +18,9 @@ class Trader():
         self.tf = 77
         self.df = None
 
+    def _sig_fig(self, x, sig=2):
+        return round(x, sig - math.ceil(math.log10(abs(x))))
+
     def _update_data(self, diff):
         last_price = pd.DataFrame(self.client.get_historical_klines(symbol=self.symbol, interval="1m",
                                                                     start_str=f"{math.floor(diff) + 1} minutes ago UTC"), \
@@ -46,6 +49,9 @@ class Trader():
         self.tf = tf
         return self.tf
 
+    def get_position(self, symbol):
+        return float([i["positionAmt"] for i in self.client.futures_position_information() if i['symbol'] == symbol][0])
+
     def enter_market(self, symbol, side, leverage, rule_no):
         last_price = float(
             self.client.get_historical_klines(symbol=symbol, interval="1m", start_str="150 seconds ago UTC")[-1][4])
@@ -53,7 +59,7 @@ class Trader():
             'symbol': symbol,
             'side': side,
             'type': 'MARKET',
-            'quantity': round(sig_fig(self.capital * leverage / (last_price), 4), 3)
+            'quantity': round(self._sig_fig(self.capital * leverage / (last_price), 4), 3)
         }
         self.latest_trade = self.client.futures_create_order(**enterMarketParams)
         self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
@@ -64,9 +70,7 @@ class Trader():
         self.trade_journal = self.trade_journal.append([self.latest_trade_info])
         return self.latest_trade_info
 
-    def exit_market(self, symbol, rule_no):
-        position_amount = float(
-            [i["positionAmt"] for i in t.client.futures_position_information() if i['symbol'] == symbol][0])
+    def exit_market(self, symbol, rule_no, position_amount):
         side = "BUY" if position_amount < 0 else "SELL"
         exitMarketParams = {
             'symbol': symbol,
@@ -83,9 +87,7 @@ class Trader():
         self.trade_journal = self.trade_journal.append([self.latest_trade_info])
         return self.latest_trade_info
 
-    def stop_market(self, symbol, price):
-        position_amount = float(
-            [i["positionAmt"] for i in t.client.futures_position_information() if i['symbol'] == symbol][0])
+    def stop_market(self, symbol, price, position_amount):
         side = "BUY" if position_amount < 0 else "SELL"
         stopMarketParams = {
             'symbol': symbol,
@@ -105,15 +107,13 @@ class Trader():
             'type': "LIMIT",
             'price': price,
             'timeInForce': "GTC",
-            'quantity': round(sig_fig(self.capital * leverage / (last_price), 4), 3)
+            'quantity': round(self._sig_fig(self.capital * leverage / (last_price), 4), 3)
         }
         self.latest_trade = self.client.futures_create_order(**enterLimitParams)
         self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
         return self.latest_trade_info
 
-    def exit_limit(self, symbol, price):
-        position_amount = float(
-            [i["positionAmt"] for i in t.client.futures_position_information() if i['symbol'] == symbol][0])
+    def exit_limit(self, symbol, price, position_amount):
         side = "BUY" if position_amount < 0 else "SELL"
         exitLimitParams = {
             'symbol': symbol,
@@ -188,48 +188,49 @@ class Trader():
         while self.start != False:
             last_date = self.df.iloc[-1]["Datetime"].to_pydatetime()
             current_date = datetime.now()
-            diff = (current_date - last_date - timedelta(minutes=self.tf)).seconds/60
+            diff = (current_date - last_date - timedelta(minutes=self.tf)).seconds / 60
 
             if round(time.time() % 60, 1) == 0 and diff <= self.tf:
 
                 dfrow, high, low, volume, open_price, open_date = self.make_row(high, low, volume, count, open_price,
                                                                                 open_date)
-                print(dfrow)
+                #                 print(dfrow)
 
                 strategy.load_data(self.df.append(dfrow))
                 strategy.create_objects()
 
                 #                 print(f"{self.tf - diff} minutes left")
 
-                if strategy.rule_2_buy_enter(-1, 0.001) and self.live_trade_history[-1][1] != "Enter":
+                if strategy.rule_2_buy_enter(-1, 0.0002) and self.get_position(self.symbol) == 0:
                     trade_info = self.enter_market(self.symbol, "BUY", self.leverage, 2)
-                elif strategy.rule_2_buy_stop(-1) and self.live_trade_history[-1][-1] == "Rule 2" and \
-                        self.live_trade_history[-1][:2] == ["Long", 'Enter']:
-                    trade_info = self.exit_market(self.symbol, 2)
-                elif strategy.rule_2_short_enter(-1, 0.001) and self.live_trade_history[-1][1] != "Enter":
-                    trade_info = self.enter_market(self.symbol, "SELL", self.leverage, 2)
-                elif strategy.rule_2_short_stop(-1) and self.live_trade_history[-1][:2] == ["Short", 'Enter'] and \
+                elif strategy.rule_2_buy_stop(-1) and self.get_position(self.symbol) > 0 and \
                         self.live_trade_history[-1][-1] == "Rule 2":
-                    trade_info = self.exit_market(self.symbol, 2)
+                    trade_info = self.exit_market(self.symbol, 2, self.get_position(self.symbol))
+                elif strategy.rule_2_short_enter(-1, 0.0002) and self.get_position(self.symbol) == 0:
+                    trade_info = self.enter_market(self.symbol, "SELL", self.leverage, 2)
+                elif strategy.rule_2_short_stop(-1) and self.get_position(self.symbol) < 0 and \
+                        self.live_trade_history[-1][-1] == "Rule 2":
+                    trade_info = self.exit_market(self.symbol, 2, self.get_position(self.symbol))
 
                 #                 time.sleep(55)
                 count += 1
 
             elif diff > self.tf:
                 self._update_data(math.floor(diff))
-                if strategy.rule_1_buy_enter(-1) and self.live_trade_history[-1][1] != "Enter":
+                if strategy.rule_1_buy_enter(-1) and self.get_position(self.symbol) == 0:
                     trade_info = self.enter_market(self.symbol, "BUY", self.leverage, 1)
-                elif strategy.rule_1_buy_exit(-1) and self.live_trade_history[-1][:2] == ["Long", 'Enter']:
-                    trade_info = self.exit_market(self.symbol, 1)
-                elif strategy.rule_1_short_enter(-1) and self.live_trade_history[-1][1] != "Enter":
+                elif strategy.rule_1_buy_exit(-1) and self.get_position(self.symbol) > 0:
+                    trade_info = self.exit_market(self.symbol, 1, self.get_position(self.symbol))
+                elif strategy.rule_1_short_enter(-1) and self.get_position(self.symbol) == 0:
                     trade_info = self.enter_market(self.symbol, "SELL", self.leverage, 1)
-                elif strategy.rule_1_short_exit(-1) and self.live_trade_history[-1][:2] == ["Short", 'Enter']:
-                    trade_info = self.exit_market(self.symbol, 1)
+                elif strategy.rule_1_short_exit(-1) and self.get_position(self.symbol) < 0:
+                    trade_info = self.exit_market(self.symbol, 1, self.get_position(self.symbol))
 
-                elif strategy.rule_3_buy_enter(-1) and self.live_trade_history[-1][1] != "Enter":
-                    trade_info = self.enter_market(self.symbol, "BUY", self.leverage, 1)
-                elif strategy.rule_3_short_enter(-1) and self.live_trade_history[-1][1] != "Enter":
-                    trade_info = self.enter_market(self.symbol, "SELL", self.leverage, 1)
+                elif strategy.rule_3_buy_enter(-1) and self.get_position(self.symbol) == 0:
+                    trade_info = self.enter_market(self.symbol, "BUY", self.leverage, 3)
+                elif strategy.rule_3_short_enter(-1) and self.get_position(self.symbol) == 0:
+                    trade_info = self.enter_market(self.symbol, "SELL", self.leverage, 3)
                 high, low, volume = [], [], []
                 count = 0
+                time.sleep(1)
 #                 print("next")
