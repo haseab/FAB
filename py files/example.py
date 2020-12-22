@@ -7,14 +7,23 @@ from binance.client import Client
 from fab_strategy import FabStrategy
 
 
-# Instantiating
-t = Trader()
-t.load_account()
+def sig_fig(self,x, sig=2):
+    return round(x, sig - math.ceil(math.log10(abs(x))))
 
-# Setting Initial Conditions
 
-t.set_timeframe(1)
-t.set_asset('BTCUSDT')
+def string_to_timestamp(date):
+    return time.mktime(datetime.datetime.strptime(s, "%d/%m/%Y").timetuple())
 
-# Start Trading
-t.start_trading(FabStrategy())
+
+if __name__ == "__main__":
+    # Instantiating
+    t = Trader()
+    t.load_account()
+
+    # Setting Initial Conditions
+
+    t.set_timeframe(1)
+    t.set_asset('BTCUSDT')
+
+    # Start Trading
+    t.start_trading(FabStrategy())
