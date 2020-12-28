@@ -7,7 +7,7 @@ from fab_strategy import FabStrategy
 class Backtester():
     def __init__(self):
         self.trade_history = ['List of Trades']
-        self.csvUrl = r"BTCUSDT Aug 17 2017 to Dec 5 2020.csv"
+        self.csvUrl = r"C:\Users\owner\Desktop\Python\PycharmProjects\FAB\data\Binance BTCUSDT Aug 17 2017 to Dec 5 2020.csv"
         self.tf = None
         self.start = None
         self.end = datetime.today().strftime('%Y-%m-%d')

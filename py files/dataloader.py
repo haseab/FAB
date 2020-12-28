@@ -15,7 +15,7 @@ class DataLoader():
         # Reading CSV File containing 1 min candlestick data
         data = pd.read_csv(csvUrl, index_col='Timestamp')
         # Converting Timestamp numbers into a new column of readable dates
-        data['Datetime'] = np.array([datetime.fromtimestamp(i) for i in data.index])
+        data['Datetime'] = [datetime.fromtimestamp(i) for i in data.index]
         data[["Open", "High", "Low", "Close", "Volume"]] = data[["Open", "High", "Low", "Close", "Volume"]].astype(
             float)
         data = data[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']]
@@ -30,7 +30,7 @@ class DataLoader():
         end_date = int(time.mktime(datetime.strptime(end_date, "%Y-%m-%d").timetuple()))
         return dataframe.loc[start_date:end_date]
 
-    def timeframe_setter(self, dataframe, tf=77, shift=8):
+    def timeframe_setter(self, dataframe, tf, shift=None):
         """ Vertical way of appending data
         Converts minute candlestick data into the timeframe(tf) of choice.
             Parameters:
@@ -80,6 +80,8 @@ class DataLoader():
 
             Returns: dataframe
             """
+        if shift == None:
+            shift = tf - len(dataframe) % tf - 1
 
         # Creating a new dataframe so that the size of the rows of the new dataframe will be the same as the new columns
         df = dataframe.iloc[shift::tf].copy()
@@ -99,7 +101,9 @@ class DataLoader():
 
         return df
 
-    def timeframe_setter_v2(self, dfraw, tf=7, shift=8):
+    def timeframe_setter_v2(self, dfraw, tf, shift=None):
+        if shift == None:
+            shift = tf - len(dfraw) % tf - 1
         """Horizontal way of appending the data """
         start = time.time()
         shift, tf = 8, 77
