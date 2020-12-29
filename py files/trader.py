@@ -53,7 +53,7 @@ class Trader():
         self.tf = None
         self.df = None
 
-    def _update_data(self, diff: int) -> pd.DataFrame:
+    def _update_data(self, diff: int) -> None:
         """
         Used to update the trading data with the exchange data so that it is real time
 
