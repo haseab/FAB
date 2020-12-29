@@ -1,10 +1,22 @@
 import matplotlib.pyplot as plt
 
-class Illustrator():
-    #     def __init__(self, data):
-    #         self.data - data
 
-    def graph_data(self, price):
+class Illustrator():
+    """
+    Responsible for analysis of trading history.
+
+    Attributes
+    -----------
+    None
+
+    Methods
+    ------------
+    graph_data
+
+    Please look at each method for descriptions
+    """
+
+    def graph_data(self, price: "dataframe")
         """Graphs the selected data on a wide chart
         Returns: plot """
         plt.rcParams['figure.figsize'] = (40, 15)

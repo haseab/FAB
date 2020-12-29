@@ -7,12 +7,19 @@ from binance.client import Client
 from fab_strategy import FabStrategy
 
 
-def sig_fig(self,x, sig=2):
+def sig_fig(x:float, sig:int =2) -> float:
+    """ Rounds to the number of significant digits indicated"""
     return round(x, sig - math.ceil(math.log10(abs(x))))
 
 
-def string_to_timestamp(date):
-    return time.mktime(datetime.datetime.strptime(s, "%d/%m/%Y").timetuple())
+def string_to_timestamp(date:str) -> int:
+    """Converts String of form DD-MM-YY into timestamp"""
+    return int(time.mktime(datetime.strptime(date, "%d/%m/%Y").timetuple()))*1000
+
+
+def into_dataframe(lst:list) -> pd.DataFrame:
+    """Converts Binance response list into dataframe"""
+    return pd.DataFrame(lst,columns = ["Timestamp","Open","High","Low", "Close","Volume","Timestamp_end","","","","",""]).set_index("Timestamp")
 
 
 if __name__ == "__main__":

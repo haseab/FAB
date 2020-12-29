@@ -1,8 +1,46 @@
 class Analyzer():
-    #     def __init__(self, tradehistory):
-    #         self.history =
+    """
+    Responsible for analysis of trading history.
 
-    def calculate_longest_run(self, trade_index):
+    Attributes
+    -----------
+    trade_history: list of lists
+    trades: list of floats
+
+    profitability: float
+    gross_profit: float
+    gross_loss: float
+    largest_profit: float
+    largest_loss: float
+    longest_run: float
+    longest_drawdown: float
+    average_win: float
+    average_loss: float
+
+    trades_won: int
+    trades_lost: int
+    win_streak: int
+    lose_streak: int
+
+
+    Methods
+    ------------
+    calculate_longest_run
+    caclulate_longest_drawdown
+    calculate_statistics
+    summarize_statistics
+
+    Please look at each method for descriptions
+    """
+
+    def calculate_longest_run(self, trade_index: "list of floats") -> (float, int):
+        """
+        Takes a list of floats (e.g. [1.05, 0.98, 1.11, 1.01, 0.78] and
+        calculates the longest consecutive chain of numbers greater than 1.
+        Each float represents 1 + the profit margin of a trade.
+
+        Returns: tuple of the product of all valid consecutive numbers and the streak number
+        """
         longest_run, longest_counter = 1, 0
         current_run, current_counter = 1, 0
 
@@ -16,7 +54,14 @@ class Analyzer():
             current_counter += 1
         return longest_run, longest_counter
 
-    def calculate_longest_drawdown(self, trade_index):
+    def calculate_longest_drawdown(self, trade_index: [float]) -> (float, int):
+        """
+        Takes a list of inputted trade results (e.g. [1.05, 0.98, 1.11, 1.01, 0.78] and
+        calculates the longest consecutive chain of numbers less than 1.
+        Each float represents 1 + the profit margin of a trade.
+
+        Returns: tuple of the product of all valid consecutive numbers and the streak number
+        """
         longest_drawdown, longest_counter = 1, 0
         current_drawdown, current_counter = 1, 0
 
@@ -31,9 +76,19 @@ class Analyzer():
 
         return longest_drawdown, longest_counter
 
-    def calculate_statistics(self, trade_history):
+    def calculate_statistics(self, trade_history: [[]]) -> None:
+        """
+        Calculates the following metrics:
+        Profit Factor, trades won, trades lost, gross profit, gross loss, largest profit, largest loss
+
+        params: list of lists, one row having the form: [LONG/SHORT, ENTER/EXIT, DATETIME, PRICE, RULE #],
+                e.g. ['Short', 'Enter', '2018-04-09 11:37:00', 6745.98, 'Rule 1'],
+
+        returns: None
+        """
+        # Initializing all variables
         self.trade_history = trade_history
-        self.initial_capital, self.capital = 30000, 30000
+        self.profitability = 1
         self.trades_won, self.trades_lost = 0, 0
         self.gross_profit, self.gross_loss = 1, 1
         self.largest_profit, self.largest_loss = 1, 1
@@ -41,17 +96,24 @@ class Analyzer():
 
         if self.trade_history == []:
             return "Not enough data to provide statistics"
+
+        # Ensures all reported trades have been closed
         if self.trade_history[-1][1] == "Enter":
             self.trade_history = self.trade_history[:-1]
 
+        # Every set of 2 consecutive rows is an "Enter" and an "Exit" trade. Considered as one trade
         for i in range(1, len(self.trade_history), 2):
-            one_trade = trade_history[i:i + 2]
+
+            one_trade = trade_history[i:i + 2]  # Length of 2
             if one_trade[0][0] == "Short":
+                # 0.999 is considering commission costs. The rest is an equation for profitability
                 profitability = 0.999 * (2 - one_trade[1][3] / one_trade[0][3])
             elif one_trade[0][0] == "Long":
                 profitability = 0.999 * (one_trade[1][3] / one_trade[0][3])
-            self.capital *= profitability
+            self.profitability *= profitability
+            # Final form of profitability is: 1 + profit margin. Profit margin CAN be negative here.
             self.trades.append(round(profitability, 4))
+
             if profitability > 1:
                 self.trades_won += 1
                 self.gross_profit *= profitability
@@ -67,7 +129,26 @@ class Analyzer():
         self.average_loss = self.gross_loss ** (1 / self.trades_lost)
         return
 
-    def summarize_statistics(self):
+    def summarize_statistics(self, capital: float = 50000.0) -> str:
+        self.initial_capital, self.capital = capital, capital
+        """
+        Summarizes all calculated statistics into a statement:
+
+        returns: str with the following form:
+
+            Strategy statistics:
+            Number of Trades:                  X
+            Trades Won vs Trades Lost:         X
+            Largest Profit vs Largest Loss:    X
+            Win Streak vs Losing Streak:       X
+            Largest Run vs Largest Drawdown:   X
+            Profit vs Loss Per Trade:          X 
+            Average Risk-Reward:               X
+            Minimum Risk-Reward:               X
+            Win Percentage:                    X
+            Profit Factor:                     X
+
+        """
         statement = f""" 
         Data is provided from {self.trade_history[1][2]} to {self.trade_history[-1][2]}
         Price of the Traded Asset went from {format(round(float(self.trade_history[1][3]), 2), ",")} to {format(float(self.trade_history[-1][3]), ",")} 
@@ -84,6 +165,6 @@ class Analyzer():
             Average Risk-Reward:               {round(((self.average_win - 1) * 100) / ((1 - self.average_loss) * 100), 5)}
             Minimum Risk-Reward:               {round((self.longest_run - 1) / (1 - self.longest_drawdown), 5)}
             Win Percentage:                    {round(self.trades_won / (self.trades_lost + self.trades_won), 5)}
-            Profit Factor:                     {round(self.capital / self.initial_capital, 3)}x
+            Profit Factor:                     {round(self.profitability, 3)}x
         """
         return statement
