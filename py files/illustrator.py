@@ -16,7 +16,7 @@ class Illustrator():
     Please look at each method for descriptions
     """
 
-    def graph_data(self, price: "dataframe")
+    def graph_data(self, price: "dataframe"):
         """Graphs the selected data on a wide chart
         Returns: plot """
         plt.rcParams['figure.figsize'] = (40, 15)

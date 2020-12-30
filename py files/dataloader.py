@@ -105,11 +105,11 @@ class DataLoader():
         if shift == None:
             shift = tf - len(dataframe) % tf - 1
 
-        # Creating a new dataframe so that the size of the rows of the new dataframe will be the same as the new columns
-        df = dataframe.iloc[shift::tf].copy()
-
         dataframe[["Open", "High", "Low", "Close", "Volume"]] = dataframe[
             ["Open", "High", "Low", "Close", "Volume"]].astype(float)
+
+        # Creating a new dataframe so that the size of the rows of the new dataframe will be the same as the new columns
+        df = dataframe.iloc[shift::tf].copy()
 
         # Iterating through a range of "tf" minute candle data, and abstracting based on the higest, lowest and sum respectively.
         df['High'] = [max(dataframe['High'][i:tf + i]) for i in range(shift, len(dataframe['High']), tf)]
@@ -119,7 +119,7 @@ class DataLoader():
         # Selecting every nth value in the list, where n is the timeframe
         df['Close'] = [dataframe['Close'].iloc[i:tf + i].iloc[-1] for i in range(shift, len(dataframe['Close']), tf)]
 
-        # Dropping the last value, this get's rid of candles that aren't complete yet
+        # Dropping the last value, this get's rid of the candle that isnt complete until the end of the tf
         df.drop(df.tail(1).index, inplace=True)
 
         return df

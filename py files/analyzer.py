@@ -33,7 +33,7 @@ class Analyzer():
     Please look at each method for descriptions
     """
 
-    def calculate_longest_run(self, trade_index: "list of floats") -> (float, int):
+    def calculate_longest_run(self, trade_index: [float]) -> (float, int):
         """
         Takes a list of floats (e.g. [1.05, 0.98, 1.11, 1.01, 0.78] and
         calculates the longest consecutive chain of numbers greater than 1.
@@ -76,7 +76,7 @@ class Analyzer():
 
         return longest_drawdown, longest_counter
 
-    def calculate_statistics(self, trade_history: [[]]) -> None:
+    def calculate_statistics(self, trade_history: [[str]]) -> None:
         """
         Calculates the following metrics:
         Profit Factor, trades won, trades lost, gross profit, gross loss, largest profit, largest loss
@@ -84,7 +84,7 @@ class Analyzer():
         params: list of lists, one row having the form: [LONG/SHORT, ENTER/EXIT, DATETIME, PRICE, RULE #],
                 e.g. ['Short', 'Enter', '2018-04-09 11:37:00', 6745.98, 'Rule 1'],
 
-        returns: None
+        Returns: None
         """
         # Initializing all variables
         self.trade_history = trade_history
@@ -134,7 +134,7 @@ class Analyzer():
         """
         Summarizes all calculated statistics into a statement:
 
-        returns: str with the following form:
+        Returns: str with the following form:
 
             Strategy statistics:
             Number of Trades:                  X
