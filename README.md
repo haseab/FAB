@@ -13,14 +13,26 @@ This bot not only comes with the trading capability, but with backtesting capabi
 If you have an aligned vision of optimizing for growth rate, or are interesting in helping develop this, feel free to fork this repo. Also don't hesitate to reach out to me.
 
 ## Table of Contents
-- [Overview](#Overview)
-  - [Structure](#Structure)
-  - [Features](#Features)
-  - [Requirements](#Requirements)
+[Overview](#Overview)
+- [Structure](#Structure)
+- [Features](#Features)
+- [Requirements](#Requirements)
 
-- [Examples](#Examples)
-  - [Backtesting](#Backtesting)
-  - [Trading](#Trading)
+[Example](#Example)
+ - [Backtesting](#Backtesting)
+    - [set_asset](#set_asset)
+    - [set_date_range](#load_account)
+    - [backtest](#start_trading)
+ - [Trading](#Trading)
+    - [load_account](#load_account)
+    - [set_timeframe](#set_timeframe)
+    - [set_leverage](#set_leverage)
+    - [get_position](#get_position)
+    - [set_asset](#set_asset)
+    - [load_existing_asset](#load_existing_asset)
+    - [start_trading](#start_trading)
+  
+  
 
 ## Overview
 ### Structure
@@ -66,7 +78,7 @@ This program has the following features:
 
 An example trading strategy will be shown to illustrate how both of these functinalities are executed. This strategy is my own personal algorithm that I've tweaked over the years and it is very profitable! Might sound crazy, but this strategy made about 110% profit in the year that Bitcoin had its bear market.  However this code should mainly serve as a wrapper for your own trading strategy.
 
-## Example - Explaining the example.py file
+## Example
 The example.py file is a file that illustrates the backtesting, as well as the trading features that this trading bot offers.
 
 ### Importing Libraries 
