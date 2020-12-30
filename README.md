@@ -5,9 +5,12 @@ I started trading in 2016. Not only trading, I was **day** trading. Every trader
 
 But then I had an idea. Yes **I will personally** never trade ever again. But why can't a bot that I created trade for me? In fact programming a bot to trade will automatically solve the biggest two issues as to why I was losing money: No adherence to a strategy, and being emotional.  
 
-This bot not only comes with the trading capability, but with backtesting capability which is one of the most powerful implementations. It can test any strategy over the history of any asset, using algorithms. The code here is modular enough for machine learning and AI algorithms to be plugged in as well and backtested. 
+### My Vision with This Bot
+I personally see the development of this bot not only as a passionate past time, but also as an investment in my future. I realize that if I can optimize for growth rate over income, that I can escape the rat race and do what I love. I can have a robot trade for me while I sleep, as well as while I go enjoy the sweetness of life. 
 
-Ever since I have automated my trading, I have been consistently making profit. I made **100%** in the crypto markets last year alone. 
+This bot not only comes with the trading capability, but with backtesting capability which is one of the most powerful implementations. It can test any strategy over the history of any asset, in a matter of seconds. There are many things I have yet to add, such as diversification of assets (reducing risk considerably while maintaining the same reward!), machine learning and statistical analyses, as well as an asset screener that optimally shows the most promising trades according to a range of metrics. As you're reading this, I'm educating myself on quantitative finance so that eventually, I'll able to take this bot to the level that quants on wall street can.
+
+If you have an aligned vision of optimizing for growth rate, or are interesting in helping develop this, feel free to fork this repo. Also don't hesitate to reach out to me.
 
 ## Table of Contents
 - [Overview](#Overview)
