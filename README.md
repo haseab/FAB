@@ -14,7 +14,8 @@ If you have an aligned vision of optimizing for growth rate, or are interesting 
 
 ## Table of Contents
 - [Overview](#Overview)
-  - [Description](#Description)
+  - [Structure](#Structure)
+  - [Features](#Features)
   - [Requirements](#Requirements)
 
 - [Examples](#Examples)
@@ -26,14 +27,36 @@ If you have an aligned vision of optimizing for growth rate, or are interesting 
   - Automatically putting Buy/Sell orders (coming soon)
 
 ## Overview
-### Description
-This program has two functions
+### Structure
+Below is a UML Class Diagram that gives a high level understanding of how this system works together. 
 
-1. **Backtesting Functionality** - Testing algorithms with historical data 
-  - The Backtesting Functionality requires a CSV of historical 1 min data of any financial asset. It can then apply the trading algorithm onto that testing data as a measure to see what trades would have been executed in the past, given that the algorithm was running. 
-    
-2. **Trading Functionality** - Executing trades on the basis of those algorithms
-  - This program can connect to an exchange using an API key, and make REST API calls to grab information or to make trades based off of the algorithms decisions
+
+
+### Features
+This program has the following features:
+
+1. **Trading Strategy** 
+    - A trading strategy is essentially a set of conditions that a computer looks for when choosing to enter or exit a position. 
+    - Ex. Buy when Price goes 2% up in 5 minutes. Close when Price goes down 0.5% in 1 minute. 
+    - Ex. Buy when 10 MA crosses above the 50 MA. Close when 10 MA crosses below the 50 MA.
+    - These strategies must be so specific that a computer can read it and execute what you want. 
+    - The strategy is an object in a separate file and all you have to do is to call the strategy into the "Trader" class (which will be introduced shortly) and it will automatically start trading in reference to it. The only conditions are that it must boolean values for its methods. 
+  
+2. **DataLoader** 
+    - This fundamental feature is the all inclusive ETL solution to extracting the necessary data to input into either the Backtester or the Trader class.
+    - The DataLoader requires the historical data in a 1 min OHLC candlestick format. This could be either in a CSV or straight from a request to an exchange API.
+    - The DataLoader also has methods for cleaning data, abstracting data, etc. 
+
+3. **Backtester** 
+    - The Backtester applies the trading strategy onto testing data as a measure to see what trades would have been executed in the past, assuming the strategy ran then. This invaluable as it provides a non bias approach to how this would have acted, regardless if you were there or not. 
+    - Note: The only thing to avoid here is to create your strategy with the same data that you'll be backtesting it on. This can cause an overfitting bias. 
+
+3. **Trader** 
+    - The Trader is the most integral part of this system. It's what brings the excitement of being able to trade in one's sleep. This complex class contains methods that are responsible for executing on the buy/sell/short/cover decisions that are made from the Trading Strategy. 
+ 
+4. **Analyzer** - Summarizing results of the Backtester or Trader
+    - After all trades are made from either the Backtester or Trader, the trading history needs to be analyzed somehow. Metrics on risk reward ratio, average drawdown, win loss ratio, and most importantly, the profit margin are what is calculated in this class.
+
  
 ### Requirements
 - This code was made with Python 3.8
