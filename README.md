@@ -19,12 +19,8 @@ If you have an aligned vision of optimizing for growth rate, or are interesting 
   - [Requirements](#Requirements)
 
 - [Examples](#Examples)
-  - [Importing Modules](#Importing-Modules)
-  - [Loading Data](#Loading-Data)
-  - [Loading Strategy](#Loading-Strategy)
-  - [Backtesting Execution](#Backtesting-Execution)
-  - Connnecting to Exchange (coming soon)
-  - Automatically putting Buy/Sell orders (coming soon)
+  - [Backtesting](#Backtesting)
+  - [Trading](#Trading)
 
 ## Overview
 ### Structure
@@ -48,52 +44,45 @@ This program has the following features:
     - The DataLoader also has methods for cleaning data, abstracting data, etc. 
 
 3. **Backtester** 
-    - The Backtester applies the trading strategy onto testing data as a measure to see what trades would have been executed in the past, assuming the strategy ran then. This invaluable as it provides a non bias approach to how this would have acted, regardless if you were there or not. 
-    - Note: The only thing to avoid here is to create your strategy with the same data that you'll be backtesting it on. This can cause an overfitting bias. 
+    - The Backtester applies the trading strategy onto testing data as a measure to see what trades would have been executed in the past, assuming the strategy ran then. This is  invaluable as it provides a non bias approach to how the strategy would have executed since the inputs types are constant.
+    - Note: One mistake to avoid when backtesting is to create your strategy with the same data that you'll be backtesting it on. This can cause an overfitting bias. 
 
 3. **Trader** 
     - The Trader is the most integral part of this system. It's what brings the excitement of being able to trade in one's sleep. This complex class contains methods that are responsible for executing on the buy/sell/short/cover decisions that are made from the Trading Strategy. 
  
 4. **Analyzer** - Summarizing results of the Backtester or Trader
-    - After all trades are made from either the Backtester or Trader, the trading history needs to be analyzed somehow. Metrics on risk reward ratio, average drawdown, win loss ratio, and most importantly, the profit margin are what is calculated in this class.
+    - After all trades are made from either the Backtester or Trader, the trading history needs to be analyzed somehow. Metrics including but not limited to risk reward ratio, average drawdown, win loss ratio, and most importantly, the profit margin are what is calculated in this class.
 
  
 ### Requirements
+- Attached is the requirements.txt file
 - This code was made with Python 3.8
 - The following non-native modules were used:
   - [matplotlib](#https://pypi.org/project/matplotlib/)
   - [pandas](#https://pypi.org/project/pandas/)
   - [numpy](#https://pypi.org/project/numpy/)
+  - [python-binance](#https://pypi.org/project/python-binance/)
+  
 
-An example algorithm will be shown to illustrate how both of these functionalities are executed. This original algorithm is very profitable! Making about 110% profit in one year in the Bitcoin markets from Apr 2019 to Apr. 2020. However this code should mainly serve as a wrapper for your own trading strategy.
+An example trading strategy will be shown to illustrate how both of these functinalities are executed. This strategy is my own personal algorithm that I've tweaked over the years and it is very profitable! Might sound crazy, but this strategy made about 110% profit in the year that Bitcoin had its bear market.  However this code should mainly serve as a wrapper for your own trading strategy.
 
-## Examples
-please check 'example.py' for a similar example.
+## Example - Explaining the example.py file
+The example.py file is a file that illustrates the backtesting, as well as the trading features that this trading bot offers.
 
-### Importing Modules
-Each module is a different class (except for the last one, which is a function). 
-- **DataLoad function:** to get the range, timeframe and chart of any dataset that you need
-- **bm_strategy:** My personal trading method added as an example to execute the backtester
-- **Backtester function:** to use the strategy on historical data to see historical performance
-
-Importing the python files in this project
+### Importing Libraries 
+Most of these
 <pre>
-from dataload import DataLoad
+from fab_strategy import FabStrategy
 from backtester import Backtester
-from bm_strategy import *
+from trader import Trader
 </pre>
 
-### Loading Data 
-Loading data here requires getting csvUrl, creating an instance of the DataLoad class and then loading the csv
-<pre>
-csvUrl = "bitcoin_data_2018_1_1_to_2018_5_1.csv"
-load1 = DataLoad()
-data = load1.load_csv(csvUrl)
-</pre>
+### Backtesting
+A number of things must be instantiated to get the best 
 
 If the data ever needs to be visualized, that can also be done by the following command
 
-<pre> data.graph_data()</pre>
+<pre> graph.graph_data()</pre>
 
 ![](https://github.com/haseab/FAB/blob/master/example%20images/chart_example.png)
 
