@@ -25,8 +25,7 @@ class Backtester():
     set_asset
     set_date_range
     set_timeframe
-    set_timeframe
-    backtest
+    start_backtest
 
     Please look at each method for descriptions
     """
@@ -78,7 +77,7 @@ class Backtester():
         self.tf = tf
         return self.tf
 
-    def backtest(self, strategy: FabStrategy, sensitivity) -> str:
+    def start_backtest(self, strategy: FabStrategy, sensitivity) -> str:
         """
         Tests the asset in history, with respect to the rules outlined in the FabStrategy class.
         It adds applicable trades to a list and then an Analyzer object summarizes the profitability

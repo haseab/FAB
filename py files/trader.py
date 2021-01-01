@@ -27,7 +27,7 @@ class Trader():
     load_account
     set_leverage
     set_timeframe
-    get_postion
+    get_position
     enter_market
     exit_market
     stop_market
@@ -37,7 +37,7 @@ class Trader():
     get_necessary_data
     set_asset
     make_row
-    load_asset
+    load_existing_asset
     start_trading
 
     Please look at each method for descriptions
@@ -181,7 +181,7 @@ class Trader():
 
     def how_much_to_buy(self, last_price):
         """Formula that calculates the position size"""
-        return round(sig_fig(self.capital * self.leverage / (last_price), 4), 3)
+        return round(sig_fig(self.capital * self.leverage / float(last_price), 4), 3)
 
     def enter_market(self, symbol: str, side: str, leverage: float, rule_no: int) -> list:
         """
@@ -453,7 +453,7 @@ class Trader():
 
         return dfrow, high, low, volume, open_price, open_date
 
-    def load_asset(self, df: pd.DataFrame) -> pd.DataFrame:
+    def load__existing_asset(self, df: pd.DataFrame) -> pd.DataFrame:
         """Sets the trading data to an already existing dataframe, passed in as an argument"""
         self.df = df
         return self.df

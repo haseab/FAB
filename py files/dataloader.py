@@ -21,7 +21,7 @@ class DataLoader():
     Please look at each method for descriptions
     """
 
-    def load_csv(self, csvUrl: str) -> "dataframe":
+    def load_csv(self, csvUrl: str) -> pd.DataFrame:
         """Function used to load 1-minute historical candlestick data with a given csv url
             The important columns are the ones that create the candlestick (open, high, low, close) """
         # Reading CSV File containing 1 min candlestick data
