@@ -141,7 +141,7 @@ class Backtester:
         # Adding all trades in a list. They are in the form of: 1+profit margin. Ex. [1.04, 0.97, 1.12] etc.
         self.trades = analyze_backtest.trades
 
-        self.profit = round(analyze_backtest.profitability, 3)
+        self.profit = round(analyze_backtest.profit, 3)
         self.summary = analyze_backtest.summarize_statistics()
 
         return self.summary

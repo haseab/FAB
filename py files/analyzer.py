@@ -1,6 +1,5 @@
 from trading_history import TradeHistory
 
-
 class Analyzer:
     """
     Responsible for analysis of trading history.
@@ -108,7 +107,7 @@ class Analyzer:
 
         # Ensures all reported trades have been closed
         if self.trade_history.last_trade().status == "Enter":
-            self.trade_history = self.trade_history[:-1]
+            self.trade_history.allTrades = self.trade_history[:-1]
 
         # Every set of 2 consecutive rows is an "Enter" and an "Exit" trade. Considered as one trade
         for i in range(1, len(self.trade_history), 2):
@@ -171,9 +170,8 @@ class Analyzer:
         final_price = format(float(self.trade_history.last_trade().price), ",")
         initial_capital = format(self.initial_capital, ",")
         hold_new_capital = format(round(self.initial_capital * self.trade_history.last_trade().price /
-                                   self.trade_history.first_trade().price, 2), ",")
+                                        self.trade_history.first_trade().price, 2), ",")
         fab_new_capital = format(round(self.capital * self.profit, 5), ",")
-
 
         statement = f""" 
         Data is provided from {self.trade_history.first_trade().datetime} to {self.trade_history.last_trade().datetime}
