@@ -1,7 +1,6 @@
 from binance.client import Client
 import pandas as pd
-from dataloader import DataLoader
-from datetime import datetime, timedelta
+from datetime import datetime
 import math
 import time
 import numpy as np
@@ -28,12 +27,6 @@ class Trader():
     set_leverage
     set_timeframe
     get_position
-    enter_market
-    exit_market
-    stop_market
-    enter_limit
-    exit_limit
-    get_last_x_candles
     get_necessary_data
     set_asset
     make_row
@@ -48,10 +41,11 @@ class Trader():
         self.client = None
         self.capital = None
         self.leverage = 1 / 1000
-        self.live_trade_history = ["List of Trades"]
+        self.live_trade_history = TradeHistory()
         self.trade_journal = pd.DataFrame()
         self.tf = None
         self.df = None
+        self.loader = _DataLoader()
 
     def load_account(self) -> str:
         """
@@ -76,46 +70,19 @@ class Trader():
         self.tf = tf
         return self.tf
 
-    def get_last_x_candles(self, symbol: str, start_minutes_ago: int, end_minutes_ago: int = 0,
-                           now: float = None) -> pd.DataFrame:
-        """
-        Provides a method for getting a set of candlestick data without inputting start and end date.
-
-        Ex. get_last_x_candles("BTCUSDT", 5, 3) means get candlestick data from 5 minutes go to 3 minutes ago.
-
-        Parameters:
-        -----------
-        symbol: str              Ex. "BTCUSDT", "ETHUSDT"
-        start_minutes_ago: int   Ex. 1, 5, 1000
-        end_minutes_ago: int     Ex. 1, 5, 1000
-
-        Returns: pd.DataFrame of candlestick data.
-        """
-        if now == None:
-            now = time.time()
-
-        seconds_in_a_minute = 60
-        timestamp_adjust = 1000
-
-        data = self.client.futures_klines(symbol=symbol, interval="1m", startTime=(int(now) - seconds_in_a_minute * (
-            start_minutes_ago) - 1) * timestamp_adjust,
-                                          endTime=int(now - seconds_in_a_minute * (end_minutes_ago)) * timestamp_adjust,
-                                          limit=abs(start_minutes_ago - end_minutes_ago))
-        return into_dataframe(data)
-
     def get_necessary_data(self, symbol: str, tf: int) -> pd.DataFrame:
         """
         Gets the minimum necessary data to trade this asset. Only a symbol and timeframe need to be inputted
 
         Note: This method is used as a way to tackle the 1000 candle limit that is currently on the Binance API.
         A discrete set of ~1000 group candles will be determined, and then the data will be extracted from each,
-        using the get_last_x_candles method, and then all of them will be merged together.
+        using the _get_binance_futures_candles method, and then all of them will be merged together.
 
         Parameters:
         symbol: str     Ex. "BTCUSDT", "ETHUSDT"
         tf: int         Ex. 1, 3, 5, 77, 100
 
-        Returns: pd.DataFrame of candlestick data
+        :return pd.DataFrame of candlestick data
 
         """
         now = time.time()
@@ -135,7 +102,8 @@ class Trader():
         # Grabbing each set of about 1000 candles and appending them one after the other
         for i in range(len(ranges)):
             try:
-                df = df.append(self.get_last_x_candles(symbol, int(ranges[i]), int(ranges[i + 1]), now))
+                df = df.append(
+                    self.loader._get_binance_futures_candles(symbol, int(ranges[i]), int(ranges[i + 1]), now))
             except IndexError:
                 pass
         return df.drop_duplicates()
@@ -148,19 +116,18 @@ class Trader():
         -----------
         diff: a number that explains how many minutes of disparity there is between current data and live data.
 
-        Returns: dataframe with the most up-to-date data.
+        :return dataframe with the most up-to-date data.
         """
         # Calculating how many minutes to fetch from API
         minutes = math.floor(diff) + 1
 
         # Getting minute candlestick data. Number of minute candlesticks represented by "minutes" variable
-        last_price = self.get_last_x_candles("BTCUSDT", minutes)
+        last_price = self.loader._get_binance_futures_candles("BTCUSDT", minutes)
         last_price['Datetime'] = [datetime.fromtimestamp(i / 1000) for i in last_price.index]
         last_price = last_price[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
-        load1 = DataLoader()
 
         # Abstracting minute data into appropriate tf
-        last_price = load1.timeframe_setter(last_price, self.tf, 0)
+        last_price = self.loader._timeframe_setter(last_price, self.tf, 0)
 
         # Updating original data with new data.
         self.df = self.df.append(last_price).drop_duplicates()
@@ -179,201 +146,6 @@ class Trader():
         """
         return float([i["positionAmt"] for i in self.client.futures_position_information() if i['symbol'] == symbol][0])
 
-    def how_much_to_buy(self, last_price):
-        """Formula that calculates the position size"""
-        return round(sig_fig(self.capital * self.leverage / float(last_price), 4), 3)
-
-    def enter_market(self, symbol: str, side: str, leverage: float, rule_no: int) -> list:
-        """
-        Creates a order in the exchange, given the symbol
-
-        Parameters:
-        ------------
-        symbol: str       Ex. "BTCUSDT", "ETHUSDT"
-        side: str         Ex. 'BUY', SELL'
-        leverage: float   Ex. 0.001, 0.500, 1.000
-        rule_no: int      Ex.  1, 2, 3
-
-        Returns: dict
-            Ex. {'orderId': 11012154287,
-                 'symbol': 'BTCUSDT',
-                 'status': 'FILLED',
-                 'clientOrderId': '2kiNaS1NdYG6QfCGjyIE1B',
-                 'price': '0',
-                 'avgPrice': '27087.68000',
-                 'origQty': '0.001',
-                 'executedQty': '0.001',
-                 'cumQuote': '27.08768',
-                 'timeInForce': 'GTC',
-                 'type': 'MARKET',
-                 'reduceOnly': False,
-                 'closePosition': False,
-                 'side': 'SELL',
-                 'positionSide': 'BOTH',
-                 'stopPrice': '0',
-                 'workingType': 'CONTRACT_PRICE',
-                 'priceProtect': False,
-                 'origType': 'MARKET',
-                 'time': 1609197914670,
-                 'updateTime': 1609197914825}
-        """
-        minutes = 2
-        last_price = self.get_last_x_candles("BTCUSDT", minutes).iloc[-1, 3]
-        #         assert self.how_much_to_buy(last_price) <= self.capital*leverage/last_price + 1
-
-        enterMarketParams = {
-            'symbol': symbol,
-            'side': side,
-            'type': 'MARKET',
-            'quantity': self.how_much_to_buy(last_price)
-        }
-
-        # Creating order to the exchange
-        self.latest_trade = self.client.futures_create_order(**enterMarketParams)
-        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
-
-        # Getting Datetime of trade
-        date = str(datetime.fromtimestamp(self.latest_trade_info['time'] / 1000))[:19]
-
-        # Creating dictionary to convert "BUY" to "Long", for the sake of maintaining trade_history form.
-        dic = {"BUY": "Long", "SELL": "Short"}
-
-        # Note: trade_history takes the form [LONG/SHORT, ENTER/EXIT, DATETIME, PRICE, RULE #]
-        self.live_trade_history.append(
-            [dic[side], "Enter", date, self.latest_trade_info['avgPrice'][:8], f"Rule {rule_no}"])
-
-        # Adding Raw order data to a separate list
-        self.trade_journal = self.trade_journal.append([self.latest_trade_info])
-
-        return self.latest_trade_info
-
-    def exit_market(self, symbol: str, rule_no: int, position_amount: float) -> list:
-        """
-        Considers the current position you have for a given symbol, and closes it accordingly
-
-        Parameters:
-        ------------
-        symbol: str       Ex. "BTCUSDT", "ETHUSDT"
-        rule_no: int      Ex.  1, 2, 3
-
-        Returns: dict     Ex. see "enter_market" description
-        """
-        # Determines whether currently long or short, and it takes the other side (in order to close it)
-        side = "BUY" if position_amount < 0 else "SELL"
-
-        exitMarketParams = {
-            'symbol': symbol,
-            'side': side,
-            'type': 'MARKET',
-            'quantity': abs(position_amount)
-        }
-
-        # Creating order to the exchange
-        self.latest_trade = self.client.futures_create_order(**exitMarketParams)
-        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
-
-        # Getting the date of the trade
-        date = str(datetime.fromtimestamp(self.latest_trade_info['time'] / 1000))[:19]
-
-        # Creating dictionary for the sake of maintaining trade_history form (since its a Short Exit, not a Buy Exit)
-        dic = {"BUY": "Short", "SELL": "Long"}
-
-        # Trade history list takes the form [LONG/SHORT, ENTER/EXIT, DATETIME, PRICE, RULE #]
-        self.live_trade_history.append(
-            [dic[side], "Exit", date, self.latest_trade_info['avgPrice'][:8], f"Rule {rule_no}"])
-
-        # Adding Raw order data to a separate list
-        self.trade_journal = self.trade_journal.append([self.latest_trade_info])
-
-        return self.latest_trade_info
-
-    def stop_market(self, symbol: str, price: float, position_amount: float) -> list:
-        """
-        Sets a stop loss (at market) at a given price for a given symbol
-
-        Parameters:
-        ------------
-        symbol: str            Ex. "BTCUSDT", "ETHUSDT"
-        price: float           Ex. 0.001, 0.500, 1.000
-        position_amount: int   Ex.  1.0, 2000, 153.5
-
-        Returns: dict          Ex. see "enter_market" desc
-
-        """
-        # Determines whether currently long or short, and it takes the other side (in order to close it)
-        side = "BUY" if position_amount < 0 else "SELL"
-
-        stopMarketParams = {
-            'symbol': symbol,
-            'side': side,
-            'type': 'STOP_MARKET',
-            'stopPrice': price,
-            'quantity': abs(position_amount)
-        }
-
-        # Creating order to the exchange
-        self.latest_trade = self.client.futures_create_order(**stopMarketParams)
-        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
-
-        return self.latest_trade_info
-
-    def enter_limit(self, symbol: str, side: str, price: float, leverage: float) -> list:
-        """
-        Sets a limit order at a given price for a given symbol
-
-        Parameters:
-        ------------
-        symbol: str       Ex. "BTCUSDT", "ETHUSDT"
-        side: str         Ex. 'BUY', SELL'
-        leverage: float   Ex. 0.001, 0.500, 1.000
-        price: int        Ex.  10254, 530, 1.01
-
-        Returns: dict     Ex. see "enter_market" desc
-
-        """
-        enterLimitParams = {
-            'symbol': symbol,
-            'side': side,
-            'type': "LIMIT",
-            'price': price,
-            'timeInForce': "GTC",
-            'quantity': round(sig_fig(self.capital * leverage / (last_price), 4), 3)
-        }
-
-        self.latest_trade = self.client.futures_create_order(**enterLimitParams)
-        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
-
-        return self.latest_trade_info
-
-    def exit_limit(self, symbol: str, price: float, position_amount: float) -> list:
-        """
-        Considers the current position you have for a given symbol, and closes it given a price.
-
-        Parameters:
-        ------------
-        symbol: str            Ex. "BTCUSDT", "ETHUSDT"
-        price: float           Ex. 0.001, 0.500, 1.000
-        position_amount: int   Ex.  1.0, 2000, 153.5
-
-        Returns: dict     Ex. see "enter_market" description
-        """
-        # Determines whether currently long or short, and it takes the other side (in order to close it)
-        side = "BUY" if position_amount < 0 else "SELL"
-
-        exitLimitParams = {
-            'symbol': symbol,
-            'side': side,
-            'type': "LIMIT",
-            'price': price,
-            'timeInForce': "GTC",
-            'quantity': abs(position_amount)
-        }
-        # Creating order to the exchange
-        self.latest_trade = self.client.futures_create_order(**exitLimitParams)
-        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
-
-        return self.latest_trade_info
-
     def set_asset(self, symbol: str) -> str:
         """
         Set Symbol of the ticker and load the necessary data with the given timeframe to trade it
@@ -382,7 +154,7 @@ class Trader():
         ------------
         symbol: str     Ex. "BTCUSDT", "ETHUSDT"
 
-        Returns: str response
+        :return str response
         """
         self.symbol = symbol
         # For Binance API purposes, 240 min needs to be inputted as "4h" on binance when fetching data
@@ -393,15 +165,14 @@ class Trader():
         if self.tf in [1, 3, 5, 15, 30, 60, 120, 240, 360, 480]:  # Note: 12H, 1D, 3D, 1W, 1M are also recognized
 
             # Fetching data from Binance if it matches the eligible timeframe, as it will be faster
-            self.df = into_dataframe(
+            self.df = Helper.into_dataframe(
                 self.client.futures_klines(symbol=symbol, interval=map_tf[self.tf], startTime=startTime))
             self.df.drop(self.df.tail(1).index, inplace=True)
 
         else:
             # If it doesn't match Binance available timeframes, it must be transformed after fetching 1m data.
             self.df = self.get_necessary_data(symbol, self.tf)
-            load1 = DataLoader()
-            self.df = load1.timeframe_setter(self.df, self.tf)
+            self.df = self.loader._timeframe_setter(self.df, self.tf)
 
         # Adding Datetime column for readability of the timestamp. Also more formatting done
         self.df['Datetime'] = [datetime.fromtimestamp(i / 1000) for i in self.df.index]
@@ -428,9 +199,8 @@ class Trader():
 
         Returns tuple -> (pd.DataFrame, list, list, list, list, list)
         """
-
         # row variable gets a pd.DataFrame of size 1.
-        row = t.get_last_x_candles("BTCUSDT", 1).reset_index()
+        row = self.loader._get_binance_futures_candles("BTCUSDT", 1).reset_index()
         timestamp = row.loc[0, "Timestamp"]
         close = float(row.loc[0, "Close"])
         high.append(float(row.loc[0, "High"]))
@@ -467,7 +237,7 @@ class Trader():
 
         Returns None.
         """
-
+        executor = TradeExecutor()
         count, open_price = 0, 0
         open_date = None
         high, low, volume = [], [], []
@@ -481,8 +251,7 @@ class Trader():
 
         while self.start != False:
 
-            diff = calculate_minute_disparity(self.df, self.tf)
-
+            diff = Helper.calculate_minute_disparity(self.df, self.tf)
             if round(time.time() % 60, 1) == 0 and diff <= self.tf:
 
                 # Getting the most up-to-date row of the <tf>-min candelstick
@@ -500,9 +269,9 @@ class Trader():
                 # Checking only Rule 2, because it needs a minute by minute check.
                 # Second condition is making sure that there is no existing position
                 if strategy.rule_2_buy_enter(-1, sensitivity) and self.get_position(self.symbol) == 0:
-                    trade_info = self.enter_market(self.symbol, "BUY", self.leverage, 2)
+                    trade_info = executor.enter_market(self.symbol, "BUY", 2)
                 elif strategy.rule_2_short_enter(-1, sensitivity) and self.get_position(self.symbol) == 0:
-                    trade_info = self.enter_market(self.symbol, "SELL", self.leverage, 2)
+                    trade_info = executor.enter_market(self.symbol, "SELL", 2)
 
                 # Saves CPU usage, waits 5 seconds before the next minute
                 time.sleep(55)
@@ -518,24 +287,24 @@ class Trader():
                 strategy.create_objects()
 
                 # Checks for the rest of the rules
-                if strategy.rule_2_short_stop(-1) and self.get_position(self.symbol) < 0 and \
-                        self.live_trade_history[-1][-1] == "Rule 2":
-                    trade_info = self.exit_market(self.symbol, 2, self.get_position(self.symbol))
-                elif strategy.rule_2_buy_stop(-1) and self.get_position(self.symbol) > 0 and \
-                        self.live_trade_history[-1][-1] == "Rule 2":
-                    trade_info = self.exit_market(self.symbol, 2, self.get_position(self.symbol))
+                if strategy.rule_2_short_stop(-1) and self.get_position(
+                        self.symbol) < 0 and self.TradeHistory.last_trade().rule == "Rule 2":
+                    trade_info = executor.exit_market(self.symbol, 2, self.get_position(self.symbol))
+                elif strategy.rule_2_buy_stop(-1) and self.get_position(
+                        self.symbol) > 0 and self.live_trade_history.last_trade().rule == "Rule 2":
+                    trade_info = executor.exit_market(self.symbol, 2, self.get_position(self.symbol))
                 elif strategy.rule_1_buy_enter(-1) and self.get_position(self.symbol) == 0:
-                    trade_info = self.enter_market(self.symbol, "BUY", self.leverage, 1)
+                    trade_info = executor.enter_market(self.symbol, "BUY", 1)
                 elif strategy.rule_1_buy_exit(-1) and self.get_position(self.symbol) > 0:
-                    trade_info = self.exit_market(self.symbol, 1, self.get_position(self.symbol))
+                    trade_info = executor.exit_market(self.symbol, 1, self.get_position(self.symbol))
                 elif strategy.rule_1_short_enter(-1) and self.get_position(self.symbol) == 0:
-                    trade_info = self.enter_market(self.symbol, "SELL", self.leverage, 1)
+                    trade_info = executor.enter_market(self.symbol, "SELL", 1)
                 elif strategy.rule_1_short_exit(-1) and self.get_position(self.symbol) < 0:
-                    trade_info = self.exit_market(self.symbol, 1, self.get_position(self.symbol))
+                    trade_info = executor.exit_market(self.symbol, 1, self.get_position(self.symbol))
                 elif strategy.rule_3_buy_enter(-1) and self.get_position(self.symbol) == 0:
-                    trade_info = self.enter_market(self.symbol, "BUY", self.leverage, 3)
+                    trade_info = executor.enter_market(self.symbol, "BUY", 3)
                 elif strategy.rule_3_short_enter(-1) and self.get_position(self.symbol) == 0:
-                    trade_info = self.enter_market(self.symbol, "SELL", self.leverage, 3)
+                    trade_info = executor.enter_market(self.symbol, "SELL", 3)
 
                     # Resetting candlesticks
                 high, low, volume = [], [], []

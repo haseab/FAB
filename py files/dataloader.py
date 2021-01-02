@@ -1,31 +1,35 @@
 import time
 import pandas as pd
 from datetime import datetime
-import numpy as np
+from binance.client import Client
+from helper import Helper
 
 
-class DataLoader():
+class _DataLoader:
     """
-    Responsible for all ETL related tasks. Loads data from csv, fetches data from Binance API.
+    Private class Responsible for all ETL related tasks. Loads data from csv, fetches data from Binance API.
 
     Attributes
     -----------
-    None
 
     Methods
     ------------
-    load_csv
-    get_range
-    timeframe_setter
+    _load_csv
+    _get_range
+    _get_binance_futures_candles
+    _timeframe_setter
 
     Please look at each method for descriptions
     """
 
-    def load_csv(self, csvUrl: str) -> pd.DataFrame:
+    def __init__(self):
+        self.client = Client()
+
+    def _load_csv(self, csv_url: str) -> pd.DataFrame:
         """Function used to load 1-minute historical candlestick data with a given csv url
             The important columns are the ones that create the candlestick (open, high, low, close) """
         # Reading CSV File containing 1 min candlestick data
-        data = pd.read_csv(csvUrl, index_col='Timestamp')
+        data = pd.read_csv(csv_url, index_col='Timestamp')
         # Converting Timestamp numbers into a new column of readable dates
         data['Datetime'] = [datetime.fromtimestamp(i) for i in data.index]
         data[["Open", "High", "Low", "Close", "Volume"]] = data[["Open", "High", "Low", "Close", "Volume"]].astype(
@@ -33,23 +37,54 @@ class DataLoader():
         data = data[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']]
         return data
 
-    def get_range(self, dataframe: pd.DataFrame, start_date: str = '2018-4-1',
-                  end_date: str = '2018-5-1') -> pd.DataFrame:
+    def _get_binance_futures_candles(self, symbol: str, start_minutes_ago: int, end_minutes_ago: int = 0,
+                                     now: float = None) -> pd.DataFrame:
+        """
+        Provides a method for getting a set of candlestick data without inputting start and end date.
+
+        Ex. _get_binance_futures_candles("BTCUSDT", 5, 3) = get candlestick data from 5 minutes ago to 3 minutes ago.
+
+        Parameters:
+        -----------
+        symbol: str              Ex. "BTCUSDT", "ETHUSDT"
+        start_minutes_ago: int   Ex. 1, 5, 1000
+        end_minutes_ago: int     Ex. 1, 5, 1000
+
+        :return pd.DataFrame of candlestick data.
+        """
+        if not now:
+            now = time.time()
+
+        seconds_in_a_minute = 60
+        timestamp_adjust = 1000
+
+        # Defining params to put in exchange API call
+        startTime = (int(now) - seconds_in_a_minute * (
+            start_minutes_ago) - 1) * timestamp_adjust  # Ex. 1609549634 -> in seconds
+        endTime = int(now - seconds_in_a_minute * end_minutes_ago) * timestamp_adjust
+        limit = abs(start_minutes_ago - end_minutes_ago)
+
+        data = self.client.futures_klines(symbol=symbol, interval="1m", startTime=startTime, endTime=endTime,
+                                          limit=limit)
+        return Helper.into_dataframe(data)
+
+    def _get_range(self, dataframe: pd.DataFrame, start_date: str = '2018-4-1',
+                   end_date: str = '2018-5-1') -> pd.DataFrame:
         """Returns the range of 1-min data within specified start & end date from the entire dataset
 
             Parameters
             ----------
-            dataframe: pd.DataFrame object with a Timestamp as its inde
+            dataframe: pd.DataFrame object with a Timestamp as its index
             start_date: date in the format of YYYY-MM-DD format
             end_date: date in the format of YYYY-MM-DD format
 
-            Returns: dataframe
+            :return dataframe
         """
         start_date = int(time.mktime(datetime.strptime(start_date, "%Y-%m-%d").timetuple()))
         end_date = int(time.mktime(datetime.strptime(end_date, "%Y-%m-%d").timetuple()))
         return dataframe.loc[start_date:end_date]
 
-    def timeframe_setter(self, dataframe: pd.DataFrame, tf: int, shift: int = None) -> pd.DataFrame:
+    def _timeframe_setter(self, dataframe: pd.DataFrame, tf: int, shift: int = None) -> pd.DataFrame:
         """ Vertical way of abstracting data
         Converts minute candlestick data into the timeframe(tf) of choice.
         Parameters
@@ -65,33 +100,17 @@ class DataLoader():
             Close - Since all that matters is the close value every 'tf' minutes, you can skip
                 every 'tf' minutes.
                 Ex.
-                    >>> dataframe['Close'] = [4.50, 4.60, 4.65, 4.44, 4.21, 4.54, 4.10]
-                    >>> timeFrame = 2
-                    >>> timeframe_setter(df, 2)
-                    >>> df['Close']
-                    [4.50, 4.65, 4.21, 4.10]
-
-                    >>> df['Close'] = [4.50, 4.60, 4.65, 4.44, 4.21, 4.54, 4.10]
-                    >>> timeFrame = 3
-                    >>> timeframe_setter(df, 3)
-                    >>> df['Close']
-                    [4.50, 4.44, 4.10]
+                    df['Close'] = pd.Series([4.50, 4.60, 4.65, 4.44, 4.21, 4.54, 4.10])
+                    _timeframe_setter(df['Close'], 2) -> [4.50, 4.65, 4.21, 4.10]
+                    _timeframe_setter(df['Close'], 3) -> [[4.50, 4.44, 4.10]
 
             Open - Same rules as Close
 
             High - Get the maximum 1-min high value given the range of the timeframe
                  Ex.
-                    >>> dataframe['High'] = [4.50, 4.60, 4.65, 4.44, 4.21, 4.54, 4.10]
-                    >>> timeFrame = 2
-                    >>> timeframe_setter(df, 2)
-                    >>> df['Close']
-                    [4.60, 4.65, 4.44, 4.54]
-
-                    >>> df['High'] = [4.50, 4.60, 4.65, 4.44, 4.21, 4.54]
-                    >>> timeFrame = 3
-                    >>> timeframe_setter(df, 3)
-                    >>> df['High']
-                    [4.65, 4.54]
+                     df['Close'] = pd.Series([4.50, 4.60, 4.65, 4.44, 4.21, 4.54, 4.10])
+                    _timeframe_setter(df['High'], 2) ->  [4.60, 4.65, 4.44, 4.54]
+                    _timeframe_setter(df['High'], 3) ->  [4.65, 4.54]
 
             Low - Same rules as 'High', but instead the minimum of that range
 
@@ -100,9 +119,9 @@ class DataLoader():
         If the range of tf is not even (such as having a tf=2 but only 5 elements), then the
         last value will be dropped
 
-        Returns: dataframe
+        :return dataframe
         """
-        if shift == None:
+        if not shift:
             shift = tf - len(dataframe) % tf - 1
 
         dataframe[["Open", "High", "Low", "Close", "Volume"]] = dataframe[
@@ -111,7 +130,7 @@ class DataLoader():
         # Creating a new dataframe so that the size of the rows of the new dataframe will be the same as the new columns
         df = dataframe.iloc[shift::tf].copy()
 
-        # Iterating through a range of "tf" minute candle data, and abstracting based on the higest, lowest and sum respectively.
+        # Iterating through candle data, and abstracting based on the highest, lowest and sum respectively.
         df['High'] = [max(dataframe['High'][i:tf + i]) for i in range(shift, len(dataframe['High']), tf)]
         df['Low'] = [min(dataframe['Low'][i:tf + i]) for i in range(shift, len(dataframe['Low']), tf)]
         df['Volume'] = [sum(dataframe['Volume'][i:tf + i]) for i in range(shift, len(dataframe['Volume']), tf)]
@@ -119,35 +138,34 @@ class DataLoader():
         # Selecting every nth value in the list, where n is the timeframe
         df['Close'] = [dataframe['Close'].iloc[i:tf + i].iloc[-1] for i in range(shift, len(dataframe['Close']), tf)]
 
-        # Dropping the last value, this get's rid of the candle that isnt complete until the end of the tf
+        # Dropping the last value, this gets rid of the candle that isn't complete until the end of the tf
         df.drop(df.tail(1).index, inplace=True)
 
         return df
 
-    def timeframe_setter_v2(self, dfraw: pd.DataFrame, tf: int, shift: int = None) -> pd.DataFrame:
+    def _timeframe_setter_v2(self, df_raw: pd.DataFrame, tf: int, shift: int = None) -> pd.DataFrame:
         """
-        Horizontal way of abstracting the data - WORK IN PROGRESS
+        WORK IN PROGRESS - Horizontal way of abstracting the data
 
         This way of abstracting data actually takes longer and more time, however it allows for
         complex cases in which not all data needs to have the same timeframe.
 
         """
 
-        if shift == None:
-            shift = tf - len(dfraw) % tf - 1
+        if not shift:
+            shift = tf - len(df_raw) % tf - 1
 
-        start = time.time()
-        shift, tf = 8, 77
+        tf = 77
         count = 0
         low, high = shift, shift + tf
-        df2 = dfraw.copy().head(0)
-        hidf = dfraw.loc[:, "High"]
-        lodf = dfraw.loc[:, "Low"]
+        df2 = df_raw.copy().head(0)
+        hi_df = df_raw.loc[:, "High"]
+        lo_df = df_raw.loc[:, "Low"]
         while count < 1000:
-            df2 = df2.append({"Datetime": dfraw.iloc[0, 0], "Open": dfraw.iloc[0, 1], "High": max(hidf[low:high]),
-                              "Low": min(lodf[low:high]), "Close": dfraw.iloc[-1, 4]}, ignore_index=True)
+            df2 = df2.append({"Datetime": df_raw.iloc[0, 0], "Open": df_raw.iloc[0, 1], "High": max(hi_df[low:high]),
+                              "Low": min(lo_df[low:high]), "Close": df_raw.iloc[-1, 4]}, ignore_index=True)
             low += 77
             high += 77
             count += 1
-        end = time.time()
+
         return df2

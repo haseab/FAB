@@ -1,4 +1,7 @@
-class Analyzer():
+from trading_history import TradeHistory
+
+
+class Analyzer:
     """
     Responsible for analysis of trading history.
 
@@ -7,7 +10,7 @@ class Analyzer():
     trade_history: list of lists
     trades: list of floats
 
-    profitability: float
+    profit: float
     gross_profit: float
     gross_loss: float
     largest_profit: float
@@ -26,7 +29,7 @@ class Analyzer():
     Methods
     ------------
     calculate_longest_run
-    caclulate_longest_drawdown
+    calculate_longest_drawdown
     calculate_statistics
     summarize_statistics
 
@@ -39,7 +42,10 @@ class Analyzer():
         calculates the longest consecutive chain of numbers greater than 1.
         Each float represents 1 + the profit margin of a trade.
 
-        Returns: tuple of the product of all valid consecutive numbers and the streak number
+        Ex. [1.05, 0.98, 1.11, 1.01, 0.78] -> (1.1211, 2)
+        Ex. [1.06, 1.05, 1.10, 1.05, 0.88] -> (1.2855, 4)
+
+        :return tuple of the product of all valid consecutive numbers and the streak number
         """
         longest_run, longest_counter = 1, 0
         current_run, current_counter = 1, 0
@@ -60,7 +66,10 @@ class Analyzer():
         calculates the longest consecutive chain of numbers less than 1.
         Each float represents 1 + the profit margin of a trade.
 
-        Returns: tuple of the product of all valid consecutive numbers and the streak number
+        Ex. [1.05, 0.98, 1.11, 1.01, 0.78] -> (0.78, 1)
+        Ex. [1.06, 1.05, 1.10, 0.95, 0.88] -> (0.8624, 2)
+
+        :return tuple of the product of all valid consecutive numbers and the streak number
         """
         longest_drawdown, longest_counter = 1, 0
         current_drawdown, current_counter = 1, 0
@@ -76,41 +85,49 @@ class Analyzer():
 
         return longest_drawdown, longest_counter
 
-    def calculate_statistics(self, trade_history: [[str]]) -> None:
+    def calculate_statistics(self, trade_history: TradeHistory) -> str:
         """
         Calculates the following metrics:
         Profit Factor, trades won, trades lost, gross profit, gross loss, largest profit, largest loss
 
         params: list of lists, one row having the form: [LONG/SHORT, ENTER/EXIT, DATETIME, PRICE, RULE #],
-                e.g. ['Short', 'Enter', '2018-04-09 11:37:00', 6745.98, 'Rule 1'],
+                Ex. ['Short', 'Enter', '2018-04-09 11:37:00', 6745.98, 'Rule 1'],
 
-        Returns: None
+        :return None
         """
         # Initializing all variables
         self.trade_history = trade_history
-        self.profitability = 1
+        self.profit = 1
         self.trades_won, self.trades_lost = 0, 0
         self.gross_profit, self.gross_loss = 1, 1
         self.largest_profit, self.largest_loss = 1, 1
         self.trades = []
 
-        if self.trade_history == []:
+        if self.trade_history.allTrades == [['List of Trades']]:
             return "Not enough data to provide statistics"
 
         # Ensures all reported trades have been closed
-        if self.trade_history[-1][1] == "Enter":
+        if self.trade_history.last_trade().status == "Enter":
             self.trade_history = self.trade_history[:-1]
 
         # Every set of 2 consecutive rows is an "Enter" and an "Exit" trade. Considered as one trade
         for i in range(1, len(self.trade_history), 2):
 
             one_trade = trade_history[i:i + 2]  # Length of 2
+            if one_trade[0].status != "Enter" or one_trade[1].status != "Exit":
+                raise Exception("Trading History doesn't have alternating Entering and Exit positions")
+
             if one_trade[0][0] == "Short":
                 # 0.999 is considering commission costs. The rest is an equation for profitability
                 profitability = 0.999 * (2 - one_trade[1][3] / one_trade[0][3])
             elif one_trade[0][0] == "Long":
                 profitability = 0.999 * (one_trade[1][3] / one_trade[0][3])
-            self.profitability *= profitability
+
+            try:
+                self.profit *= profitability
+            except NameError:
+                raise Exception("Something is wrong with TradeHistory. No Long/Short")
+
             # Final form of profitability is: 1 + profit margin. Profit margin CAN be negative here.
             self.trades.append(round(profitability, 4))
 
@@ -127,14 +144,14 @@ class Analyzer():
         self.longest_drawdown, self.lose_streak = self.calculate_longest_drawdown(self.trades)
         self.average_win = self.gross_profit ** (1 / self.trades_won)
         self.average_loss = self.gross_loss ** (1 / self.trades_lost)
-        return
+        return "calculated stats"
 
     def summarize_statistics(self, capital: float = 50000.0) -> str:
         self.initial_capital, self.capital = capital, capital
         """
         Summarizes all calculated statistics into a statement:
 
-        Returns: str with the following form:
+        :return str with the following form:
 
             Strategy statistics:
             Number of Trades:                  X
@@ -149,11 +166,20 @@ class Analyzer():
             Profit Factor:                     X
 
         """
+
+        initial_price = format(round(float(self.trade_history.first_trade().price), 2), ",")
+        final_price = format(float(self.trade_history.last_trade().price), ",")
+        initial_capital = format(self.initial_capital, ",")
+        hold_new_capital = format(round(self.initial_capital * self.trade_history.last_trade().price /
+                                   self.trade_history.first_trade().price, 2), ",")
+        fab_new_capital = format(round(self.capital * self.profit, 5), ",")
+
+
         statement = f""" 
-        Data is provided from {self.trade_history[1][2]} to {self.trade_history[-1][2]}
-        Price of the Traded Asset went from {format(round(float(self.trade_history[1][3]), 2), ",")} to {format(float(self.trade_history[-1][3]), ",")} 
-        If you had {format(self.initial_capital, ",")}, normally it would have turned into: {format(round(self.initial_capital * self.trade_history[-1][3] / self.trade_history[1][3], 2), ",")}
-        However, using the FAB method, it would turn into: {format(round(self.capital, 5), ",")}
+        Data is provided from {self.trade_history.first_trade().datetime} to {self.trade_history.last_trade().datetime}
+        Price of the Traded Asset went from {initial_price} to {final_price} 
+        If you had {initial_capital}, normally it would have turned into: {hold_new_capital}
+        However, using the FAB method, it would turn into: {fab_new_capital}
 
         Strategy statistics:
             Number of Trades:                  {self.trades_lost + self.trades_won} 
@@ -165,6 +191,6 @@ class Analyzer():
             Average Risk-Reward:               {round(((self.average_win - 1) * 100) / ((1 - self.average_loss) * 100), 5)}
             Minimum Risk-Reward:               {round((self.longest_run - 1) / (1 - self.longest_drawdown), 5)}
             Win Percentage:                    {round(self.trades_won / (self.trades_lost + self.trades_won), 5)}
-            Profit Factor:                     {round(self.profitability, 3)}x
+            Profit Factor:                     {round(self.profit, 3)}x
         """
         return statement
