@@ -20,25 +20,14 @@ If you have an aligned vision of optimizing for growth rate, or are interesting 
 
 [Example](#Example)
  - [Backtesting](#Backtesting)
-    - [set_asset](#set_asset)
-    - [set_date_range](#load_account)
-    - [backtest](#start_trading)
  - [Trading](#Trading)
-    - [load_account](#load_account)
-    - [set_timeframe](#set_timeframe)
-    - [set_leverage](#set_leverage)
-    - [get_position](#get_position)
-    - [set_asset](#set_asset)
-    - [load_existing_asset](#load_existing_asset)
-    - [start_trading](#start_trading)
-  
-  
+
 
 ## Overview
 ### Structure
 Below is a UML Class Diagram that gives a high level understanding of how this system works together. 
 
-
+![](https://github.com/haseab/FAB/blob/master/example%20images/uml_class_diagram.png)
 
 ### Features
 This program has the following features:
@@ -67,7 +56,7 @@ This program has the following features:
 
  
 ### Requirements
-- Attached is the requirements.txt file
+- Attached is the [requirements.txt file](#https://github.com/haseab/FAB/blob/master/requirements.txt)
 - This code was made with Python 3.8
 - The following non-native modules were used:
   - [matplotlib](#https://pypi.org/project/matplotlib/)
@@ -76,13 +65,14 @@ This program has the following features:
   - [python-binance](#https://pypi.org/project/python-binance/)
   
 
-An example trading strategy will be shown to illustrate how both of these functinalities are executed. This strategy is my own personal algorithm that I've tweaked over the years and it is very profitable! Might sound crazy, but this strategy made about 110% profit in the year that Bitcoin had its bear market.  However this code should mainly serve as a wrapper for your own trading strategy.
+An example trading strategy will be shown to illustrate how both of these functionalities are executed. This strategy is my own personal algorithm that I've tweaked over the years and it is very profitable! 
+Might sound crazy, but this strategy made about 110% profit in the year that Bitcoin had its bear market.  However this code should mainly serve as a wrapper for your own trading strategy.
 
 ## Example
 The example.py file is a file that illustrates the backtesting, as well as the trading features that this trading bot offers.
 
 ### Importing Libraries 
-Most of these
+In order to trade or even backtest, you need only the strategy class and the backtest/trader classes. The rest of the classes are already imported in the other files.
 <pre>
 from fab_strategy import FabStrategy
 from backtester import Backtester
@@ -90,33 +80,79 @@ from trader import Trader
 </pre>
 
 ### Backtesting
-A number of things must be instantiated to get the best 
+A number of things must be done in order to backtest successfully. You need to 
+- set the asset (e.g. BTCUSDT, ETHUSDT, LTCUSDT)
+- set the date range (the time period in which you want to test)
+- set the timeframe (how big of a period you want the candles to represent)
 
-If the data ever needs to be visualized, that can also be done by the following command
+<pre>
+b = Backtester()
+b.set_asset("BTCUSDT")
+b.set_timeframe(77)
+b.set_date_range("2018-01-01", "2019-01-01")
+</pre>
 
-<pre> graph.graph_data()</pre>
+**Note**: It is important to run these commands in order. 
+- You can't set the range without setting the timeframe first. 
+- You can't set the timeframe without setting the asset first
 
-![](https://github.com/haseab/FAB/blob/master/example%20images/chart_example.png)
+
+Once those are done, you can initiate backtesting by the following command: 
+ <pre>
+strategy = FabStrategy()
+sensitivity = 0.0001
+
+results = b.start_backtest(strategy, sensitivity)
+print(results)
+</pre>
+
+This will start the backtesting by going through the entire dataset and see if your rules from the <code>FabStrategy</code> apply. It will then calculate a load of important metrics than can be accessed after.
+
+The final return value should look something like this:
+
+![](https://github.com/haseab/FAB/blob/master/example%20images/trade_stats_example.png)
 
 
-### Loading Strategy
-Loading the strategy is the hardest part here. Whatever strategy that is inputted must follow a specific format
-A picture below is as follows
+#### Further Additions
+
+You can get further metrics after running this backtest. Among the many things calculated, you can obtain the trading history of exactly what was bought at what time. Below is an image displaying this:
 
 ![](https://github.com/haseab/FAB/blob/master/example%20images/trade_list_example.png)
 
+You can also directly access all the metrics that were listed in the summary. Just take a look at the documentation for their attributes:
+
+Example: 
 <pre>
-strategy = bm_strategy(load1, data,7,77,231,880,2354,77,"2018-01-01","2018-05-01")
+>>> print(b.profit)
+1.997
 </pre>
 
-### Backtesting Execution
-Create an instance of the Backtester class, then find the trade statistics
+### Live Trading
+
+Live trading is actually a little simpler than backtesting. There is no information to load, that is already done for you. There is no need to set date ranges since it's live. 
+The only thing that is needed to do is to set the asset, timeframe and leverage. Leverage by default is going to be 0.001x what you have in your account for safety reasons. 
 
 <pre>
-backtest_bm = Backtester(data,strategy)
-print(backtest_bm.trade_stats(strategy))
+t = Trader() 
+t.load_account() 
+t.set_timeframe(77)  
+t.set_asset("BTCUSDT")</pre> 
+
+**Note**: You must also have a configuration file with your Binance API keys. Below is an example of how the txt file should look like
+<pre>
+API_KEY,"FASDJFLASDJLFKAJ;DSKFJ;ASDLKFJ;ALDSKF"
+SECRET,"SD;FJSDALKFJ;ASLDKJFLSDKJFLASKDJFOLAS"
 </pre>
 
-and the result should be as follows
 
-![](https://github.com/haseab/FAB/blob/master/example%20images/trade_stats_example.png)
+**Note**: the timeframe needs to be set before the setting of the asset. This is because it will fetch this information from the API rather than using 1 minute data.
+
+When you're ready to trade, you run:
+<pre>
+strategy = FabStrategy()
+t.start_trading(strategy)
+</pre>
+
+And it will automatically trade according to the strategy that is inputted. 
+
+That is it so far, enjoy! 
