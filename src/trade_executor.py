@@ -6,6 +6,8 @@ from trade import Trade
 
 class TradeExecutor(Trader):
     """
+    Responsible for the execution of trades on the binance Exchange. The parent class Trader analyzes whether to trade or not.
+
     Attributes
     ----------
     All attributes from Trader class

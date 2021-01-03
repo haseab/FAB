@@ -42,7 +42,7 @@ class Backtester:
 
     def set_asset(self, symbol: str, csvUrl: str = None) -> pd.DataFrame:
         """Asset to be backtesting"""
-        if csvUrl == None:
+        if not csvUrl:
             csvUrl = self.csvUrl
 
         # Set CSV Url or connect to DB
