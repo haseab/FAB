@@ -1,5 +1,5 @@
 from datetime import datetime
-from dataloader import DataLoader
+from dataloader import _DataLoader
 from analyzer import Analyzer
 from fab_strategy import FabStrategy
 import pandas as pd
