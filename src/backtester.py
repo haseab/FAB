@@ -42,7 +42,7 @@ class Backtester:
 
     def set_asset(self, symbol: str, csvUrl: str = None) -> pd.DataFrame:
         """Asset to be backtesting"""
-        if not csvUrl:
+        if csvUrl == None:
             csvUrl = self.csvUrl
 
         # Set CSV Url or connect to DB
@@ -87,7 +87,7 @@ class Backtester:
         Parameters:
         -----------
         strategy:    Object - any trading strategy that takes the index and sensitivity as input, and returns boolean values.
-        sensitivity: float  - how far from the moving average should you enter. The larger the value, the further and less sensitive.
+        sensitivity: float  - Allowance between price and MA. The larger the value, the further and less sensitive.
 
 
         :return str - A summary of all metrics in the backtest. (See Analyzer.summarize_statistics method for more info)
@@ -109,28 +109,33 @@ class Backtester:
                 self.trade_history.append(Trade(["Long", "Enter", date[i], strategy.price[i], "Rule 1"]))
 
             # Second condition ensures that the previous trade was entering so that it can exit.
-            elif strategy.rule_1_buy_exit(
-                    i) and self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
+            elif strategy.rule_1_buy_exit(i) and self.trade_history.last_trade().side == "Long" \
+                    and self.trade_history.last_trade().status == "Enter":
                 self.trade_history.append(Trade(["Long", "Exit", date[i], strategy.price[i], "Rule 1"]))
 
             elif strategy.rule_1_short_enter(i) and self.trade_history.last_trade().status != "Enter":
                 self.trade_history.append(Trade(["Short", "Enter", date[i], strategy.price[i], "Rule 1"]))
 
-            elif strategy.rule_1_short_exit(
-                    i) and self.trade_history.last_trade().side == "Short" and self.trade_history.last_trade().status == "Enter":
+            elif strategy.rule_1_short_exit(i) and self.trade_history.last_trade().side == "Short" \
+                    and self.trade_history.last_trade().status == "Enter":
                 self.trade_history.append(Trade(["Short", "Exit", date[i], strategy.price[i], "Rule 1"]))
+
             elif strategy.rule_2_buy_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
                 self.trade_history.append(Trade(["Long", "Enter", date[i], strategy.black[i], "Rule 2"]))
-            elif strategy.rule_2_buy_stop(
-                    i) and self.trade_history.last_trade().rule == "Rule 2" and self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
+
+            elif strategy.rule_2_buy_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
+                    self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
                 self.trade_history.append(Trade(["Long", "Exit", date[i], strategy.price[i], "Rule 2"]))
+
             elif strategy.rule_2_short_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
                 self.trade_history.append(Trade(["Short", "Enter", date[i], strategy.black[i], "Rule 2"]))
-            elif strategy.rule_2_short_stop(
-                    i) and self.trade_history.last_trade().rule == "Rule 2" and self.trade_history.last_trade().side == "Short" and self.trade_history.last_trade().status == "Enter":
+            elif strategy.rule_2_short_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
+                    self.trade_history.last_trade().side == "Short" and self.trade_history.last_trade().status == "Enter":
                 self.trade_history.append(Trade(["Short", "Exit", date[i], strategy.price[i], "Rule 2"]))
+
             elif strategy.rule_3_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
                 self.trade_history.append(Trade(["Long", "Enter", date[i], strategy.price[i], "Rule 3"]))
+
             elif strategy.rule_3_short_enter(i) and self.trade_history.last_trade().status != "Enter":
                 self.trade_history.append(Trade(["Short", "Enter", date[i], strategy.price[i], "Rule 3"]))
 

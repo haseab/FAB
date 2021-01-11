@@ -49,14 +49,18 @@ class Trader():
         self.trade_journal = pd.DataFrame()
         self.tf = None
         self.df = None
+        self.start = False
         self.loader = _DataLoader()
+
+    def check_status(self):
+        status = pd.read_csv(r'C:\Users\haseab\Desktop\Python\PycharmProjects\FAB\local\trade_status.txt').set_index('index')
+        self.start = bool(status.loc[0,'status'])
 
     def load_account(self) -> str:
         """
         Sign in to account using API_KEY and using Binance API
         """
-        info = pd.read_csv(r'C:\Users\haseab\Desktop\Python\PycharmProjects\FAB\local\binance_api.txt').set_index(
-            'Name')
+        info = pd.read_csv(r'C:\Users\haseab\Desktop\Python\PycharmProjects\FAB\local\binance_api.txt').set_index('Name')
         API_KEY = info.loc["API_KEY", "Key"]
         SECRET = info.loc["SECRET", "Key"]
         self.client = Client(API_KEY, SECRET)
@@ -106,8 +110,7 @@ class Trader():
         # Grabbing each set of about 1000 candles and appending them one after the other
         for i in range(len(ranges)):
             try:
-                df = df.append(
-                    self.loader._get_binance_futures_candles(symbol, int(ranges[i]), int(ranges[i + 1]), now))
+                df = df.append(self.loader._get_binance_futures_candles(symbol, int(ranges[i]), int(ranges[i + 1]), now))
             except IndexError:
                 pass
         return df.drop_duplicates()
@@ -181,13 +184,12 @@ class Trader():
         # Adding Datetime column for readability of the timestamp. Also more formatting done
         self.df['Datetime'] = [datetime.fromtimestamp(i / 1000) for i in self.df.index]
         self.df = self.df[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
-        self.df[["Open", "High", "Low", "Close", "Volume"]] = self.df[
-            ["Open", "High", "Low", "Close", "Volume"]].astype(float)
+        self.df[["Open", "High", "Low", "Close", "Volume"]] = self.df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
 
         return f"Symbol changed to {self.symbol}"
 
-    def make_row(self, high=[], low=[], volume=[], count: int = 0, open_price: float = None, open_date: str = None) -> (
-    pd.DataFrame, list, list, list, list, list):
+    def make_row(self, high=[], low=[], volume=[], count: int = 0, open_price: float = None,
+                 open_date: str = None) -> (pd.DataFrame, list, list, list, list, list):
         """
         Helper function used to update the last row of a dataframe, using all of the data in the previous "last row" as input.
         This is used to update the price of the candlestick live, with the incomplete current candle constantly updating.
@@ -232,7 +234,7 @@ class Trader():
         self.df = df
         return self.df
 
-    def start_trading(self, strategy: FabStrategy, sensitivity=0, debug=False) -> None:
+    def start_trading(self, strategy: FabStrategy, executor, sensitivity=0, debug=False) -> None:
         """
         Starts the process of trading live. Each minute, the last row of the data is updated and Rule #2 is checked,
         otherwise, it waits till the end of the timeframe where it gets the latest data before it checks the rest of the rules.
@@ -241,24 +243,21 @@ class Trader():
 
         Returns None.
         """
-        executor = TradeExecutor()
         count, open_price = 0, 0
         open_date = None
         high, low, volume = [], [], []
-
-        # Turning trading bot "on"
-        self.start = True
 
         # Loading data into strategy, and creating moving averages.
         strategy.load_data(self.df)
         strategy.create_objects()
 
-        while self.start != False:
+        self.check_status()
 
+        while self.start != False:
             diff = Helper.calculate_minute_disparity(self.df, self.tf)
             if round(time.time() % 60, 1) == 0 and diff <= self.tf:
 
-                # Getting the most up-to-date row of the <tf>-min candelstick
+                # Getting the most up-to-date row of the <tf>-min candlestick
                 dfrow, high, low, volume, open_price, open_date = self.make_row(high, low, volume, count, open_price,
                                                                                 open_date)
 
@@ -278,7 +277,7 @@ class Trader():
                     trade_info = executor.enter_market(self.symbol, "SELL", 2)
 
                 # Saves CPU usage, waits 5 seconds before the next minute
-                time.sleep(55)
+                time.sleep(50)
 
                 count += 1
 
@@ -291,11 +290,11 @@ class Trader():
                 strategy.create_objects()
 
                 # Checks for the rest of the rules
-                if strategy.rule_2_short_stop(-1) and self.get_position(
-                        self.symbol) < 0 and self.TradeHistory.last_trade().rule == "Rule 2":
+                if strategy.rule_2_short_stop(-1) and self.get_position(self.symbol) < 0 and \
+                        executor.live_trade_history.last_trade().rule == 2:
                     trade_info = executor.exit_market(self.symbol, 2, self.get_position(self.symbol))
-                elif strategy.rule_2_buy_stop(-1) and self.get_position(
-                        self.symbol) > 0 and self.live_trade_history.last_trade().rule == "Rule 2":
+                elif strategy.rule_2_buy_stop(-1) and self.get_position(self.symbol) > 0 and \
+                        executor.live_trade_history.last_trade().rule == 2:
                     trade_info = executor.exit_market(self.symbol, 2, self.get_position(self.symbol))
                 elif strategy.rule_1_buy_enter(-1) and self.get_position(self.symbol) == 0:
                     trade_info = executor.enter_market(self.symbol, "BUY", 1)
@@ -316,4 +315,8 @@ class Trader():
                 time.sleep(1)
 
                 if debug == True:
+                    print(diff)
                     print("next")
+            self.check_status()
+
+        return "Trading Stopped"

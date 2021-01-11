@@ -121,7 +121,7 @@ class _DataLoader:
 
         :return dataframe
         """
-        if not shift:
+        if shift == None:
             shift = tf - len(dataframe) % tf - 1
 
         dataframe[["Open", "High", "Low", "Close", "Volume"]] = dataframe[
@@ -152,7 +152,7 @@ class _DataLoader:
 
         """
 
-        if not shift:
+        if shift == None:
             shift = tf - len(df_raw) % tf - 1
 
         tf = 77
