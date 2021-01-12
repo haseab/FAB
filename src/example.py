@@ -11,8 +11,8 @@ if __name__ == "__main__":
     # Instantiating
     b = Backtester()
     b.set_asset("BTCUSDT")
-    b.set_date_range("2018-01-01", "2019-01-01")
     b.set_timeframe(77)
+    b.set_date_range("2018-01-01", "2019-01-01")
 
     results = b.start_backtest
 

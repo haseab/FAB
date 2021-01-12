@@ -2,6 +2,8 @@ from datetime import datetime
 from dataloader import _DataLoader
 from analyzer import Analyzer
 from fab_strategy import FabStrategy
+from trading_history import TradeHistory
+from trade import Trade
 import pandas as pd
 
 
@@ -33,7 +35,7 @@ class Backtester:
 
     def __init__(self):
         self.trade_history = TradeHistory()
-        self.csvUrl = r"C:\Users\haseab\Desktop\desktop comp\Desktop\Python\PycharmProjects\FAB\data\Binance BTCUSDT Aug 17 2017 to Dec 5 2020.csv"  # Hard Coded
+        self.csvUrl = "C:\\Users\\haseab\\Desktop\\Python\\PycharmProjects\\FAB\\data\\Binance BTCUSDT Aug 17 2017 to Jan 12 2021.csv"  # Hard Coded
         self.tf = None
         self.start = None
         self.end = datetime.today().strftime('%Y-%m-%d')
@@ -150,3 +152,5 @@ class Backtester:
         self.summary = analyze_backtest.summarize_statistics()
 
         return self.summary
+
+

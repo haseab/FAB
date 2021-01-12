@@ -57,6 +57,8 @@ class Analyzer:
                 continue
             current_run *= trade_index[i]
             current_counter += 1
+        longest_run = max(longest_run, current_run)
+        longest_counter = max(longest_counter, current_counter)
         return longest_run, longest_counter
 
     def calculate_longest_drawdown(self, trade_index: [float]) -> (float, int):
@@ -81,7 +83,8 @@ class Analyzer:
                 continue
             current_drawdown *= trade_index[i]
             current_counter += 1
-
+        longest_drawdown = min(longest_drawdown, current_drawdown)
+        longest_counter = max(longest_counter, current_counter)
         return longest_drawdown, longest_counter
 
     def calculate_statistics(self, trade_history: TradeHistory) -> str:
@@ -129,7 +132,6 @@ class Analyzer:
 
             # Final form of profitability is: 1 + profit margin. Profit margin CAN be negative here.
             self.trades.append(round(profitability, 4))
-
             if profitability > 1:
                 self.trades_won += 1
                 self.gross_profit *= profitability
@@ -141,11 +143,11 @@ class Analyzer:
 
         self.longest_run, self.win_streak = self.calculate_longest_run(self.trades)
         self.longest_drawdown, self.lose_streak = self.calculate_longest_drawdown(self.trades)
-        self.average_win = self.gross_profit ** (1 / self.trades_won)
-        self.average_loss = self.gross_loss ** (1 / self.trades_lost)
+        self.average_win = self.gross_profit ** (1 / self.trades_won) if self.trades_won != 0 else 1
+        self.average_loss = self.gross_loss ** (1 / self.trades_lost) if self.trades_lost != 0 else 1
         return "calculated stats"
 
-    def summarize_statistics(self, capital: float = 50000.0) -> str:
+    def summarize_statistics(self, capital: float = 9083.0) -> str:
         self.initial_capital, self.capital = capital, capital
         """
         Summarizes all calculated statistics into a statement:
@@ -173,11 +175,16 @@ class Analyzer:
                                         self.trade_history.first_trade().price, 2), ",")
         fab_new_capital = format(round(self.capital * self.profit, 5), ",")
 
+        avg_rr = round(((self.average_win - 1) * 100) / ((1 - self.average_loss) * 100), 5) if \
+            self.average_win and self.average_loss != 1 else 0
+        min_rr = round((self.longest_run - 1) / (1 - self.longest_drawdown), 5) if \
+            self.longest_run and self.longest_drawdown != 1 else 0
+
         statement = f""" 
         Data is provided from {self.trade_history.first_trade().datetime} to {self.trade_history.last_trade().datetime}
         Price of the Traded Asset went from {initial_price} to {final_price} 
-        If you had {initial_capital}, normally it would have turned into: {hold_new_capital}
-        However, using the FAB method, it would turn into: {fab_new_capital}
+        If you held {initial_capital} worth of the asset, it would be: {hold_new_capital} now
+        However, using the FAB method, it would be: {fab_new_capital} now
 
         Strategy statistics:
             Number of Trades:                  {self.trades_lost + self.trades_won} 
@@ -186,8 +193,8 @@ class Analyzer:
             Win Streak vs Losing Streak:       {self.win_streak} vs {self.lose_streak}
             Largest Run vs Largest Drawdown:   {round(self.longest_run, 5)} vs {round(self.longest_drawdown, 5)}
             Profit vs Loss Per Trade:          {round(self.average_win, 5)} vs {round(self.average_loss, 5)}
-            Average Risk-Reward:               {round(((self.average_win - 1) * 100) / ((1 - self.average_loss) * 100), 5)}
-            Minimum Risk-Reward:               {round((self.longest_run - 1) / (1 - self.longest_drawdown), 5)}
+            Average Risk-Reward:               {avg_rr}
+            Minimum Risk-Reward:               {min_rr}
             Win Percentage:                    {round(self.trades_won / (self.trades_lost + self.trades_won), 5)}
             Profit Factor:                     {round(self.profit, 3)}x
         """
