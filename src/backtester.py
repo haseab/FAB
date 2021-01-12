@@ -28,6 +28,7 @@ class Backtester:
     set_asset
     set_date_range
     set_timeframe
+    validate_trades
     start_backtest
 
     Please look at each method for descriptions
@@ -81,6 +82,13 @@ class Backtester:
         self.tf = tf
         return self.tf
 
+    def validate_trades(self) -> [[]]:
+        """ Puts the already given information in a way that is easily debuggable"""
+        adjusted_trades = [-round(100 - i * 100, 4) if i < 1 else round(i * 100 - 1 * 100, 4) for i in self.trades]
+        validation = [self.trade_history[i:i + 2] + [[adjusted_trades[j]]] for i, j in
+                      zip(range(1, len(self.trade_history), 2), range(len(adjusted_trades)))]
+        return validation
+
     def start_backtest(self, strategy: FabStrategy, sensitivity) -> str:
         """
         Tests the asset in history, with respect to the rules outlined in the FabStrategy class.
@@ -106,11 +114,13 @@ class Backtester:
 
         # Iterating through every single data point and checking if rules apply.
         for i in range(231, len(df) - 1):
+
             # Second condition ensures you aren't doubled entering
             if strategy.rule_1_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
                 self.trade_history.append(Trade(["Long", "Enter", date[i], strategy.price[i], "Rule 1"]))
 
             # Second condition ensures that the previous trade was entering so that it can exit.
+
             elif strategy.rule_1_buy_exit(i) and self.trade_history.last_trade().side == "Long" \
                     and self.trade_history.last_trade().status == "Enter":
                 self.trade_history.append(Trade(["Long", "Exit", date[i], strategy.price[i], "Rule 1"]))

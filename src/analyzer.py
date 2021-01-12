@@ -100,6 +100,7 @@ class Analyzer:
         # Initializing all variables
         self.trade_history = trade_history
         self.profit = 1
+        commission = 0.9996
         self.trades_won, self.trades_lost = 0, 0
         self.gross_profit, self.gross_loss = 1, 1
         self.largest_profit, self.largest_loss = 1, 1
@@ -121,9 +122,9 @@ class Analyzer:
 
             if one_trade[0][0] == "Short":
                 # 0.999 is considering commission costs. The rest is an equation for profitability
-                profitability = 0.999 * (2 - one_trade[1][3] / one_trade[0][3])
+                profitability = (commission**2) * (2 - one_trade[1][3] / one_trade[0][3])
             elif one_trade[0][0] == "Long":
-                profitability = 0.999 * (one_trade[1][3] / one_trade[0][3])
+                profitability = (commission**2) * (one_trade[1][3] / one_trade[0][3])
 
             try:
                 self.profit *= profitability
@@ -131,7 +132,7 @@ class Analyzer:
                 raise Exception("Something is wrong with TradeHistory. No Long/Short")
 
             # Final form of profitability is: 1 + profit margin. Profit margin CAN be negative here.
-            self.trades.append(round(profitability, 4))
+            self.trades.append(round(profitability, 6))
             if profitability > 1:
                 self.trades_won += 1
                 self.gross_profit *= profitability
@@ -183,6 +184,7 @@ class Analyzer:
         statement = f""" 
         Data is provided from {self.trade_history.first_trade().datetime} to {self.trade_history.last_trade().datetime}
         Price of the Traded Asset went from {initial_price} to {final_price} 
+
         If you held {initial_capital} worth of the asset, it would be: {hold_new_capital} now
         However, using the FAB method, it would be: {fab_new_capital} now
 

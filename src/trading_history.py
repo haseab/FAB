@@ -18,6 +18,11 @@ class TradeHistory:
         self.allTrades.append(trade)
         return True
 
+    def convert_list(lst):
+        new_list = TradeHistory()
+        new_list.allTrades = lst
+        return new_list
+
     def __len__(self):
         return len(self.allTrades)
 
