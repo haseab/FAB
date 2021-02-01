@@ -6,23 +6,23 @@ class Analyzer:
 
     Attributes
     -----------
-    trade_history: list of lists
-    trades: list of floats
-
-    profit: float
-    gross_profit: float
-    gross_loss: float
-    largest_profit: float
-    largest_loss: float
-    longest_run: float
-    longest_drawdown: float
-    average_win: float
-    average_loss: float
-
-    trades_won: int
-    trades_lost: int
-    win_streak: int
-    lose_streak: int
+    trades:               [float]       - pnl scores of each indvidiual trade (Ex. [1.25,0.97,1.10,0.91]
+    trade_history:        TradeHistory  - Object that contains list of Trade Objects
+    pnl:                  float         - Cumulative pnl score (Ex. 1.59)
+    gross_profit:         float         - Cumulative profit score (Ex.7.56)
+    gross_loss:           float         - Cumulative loss score (Ex.0.25)
+    largest_profit:       float
+    largest_loss:         float
+    longest_run:          float         - Cumulative pnl for consecutive profits (Ex. 1.64)
+    longest_drawdown:     float         - Cumulative pnl for consecutive losses (Ex. 0.85)
+    average_win:          float
+    average_loss:         float
+    trades_won:           int
+    trades_lost:          int
+    win_streak:           int
+    lose_streak:          int
+    self.initial_capital: float          - Balance before trading using strategy
+    self.capital:         float          - Balance after trading using strategy
 
 
     Methods
@@ -34,6 +34,25 @@ class Analyzer:
 
     Please look at each method for descriptions
     """
+    def __init__(self):
+        self.capital = None
+        self.pnl = None
+        self.gross_profit = None
+        self.gross_loss = None
+        self.initial_capital = None
+        self.largest_profit = None
+        self.largest_loss = None
+        self.longest_run = None
+        self.longest_drawdown = None
+        self.average_win = None
+        self.average_loss = None
+        self.trades_won = None
+        self.trades_lost = None
+        self.lose_streak = None
+        self.trades = None
+        self.trade_history = None
+        self.win_streak = None
+
 
     def calculate_longest_run(self, trade_index: [float]) -> (float, int):
         """
@@ -99,7 +118,7 @@ class Analyzer:
         """
         # Initializing all variables
         self.trade_history = trade_history
-        self.profit = 1
+        self.pnl = 1
         commission = 0.9996
         self.trades_won, self.trades_lost = 0, 0
         self.gross_profit, self.gross_loss = 1, 1
@@ -127,7 +146,7 @@ class Analyzer:
                 profitability = (commission**2) * (one_trade[1][3] / one_trade[0][3])
 
             try:
-                self.profit *= profitability
+                self.pnl *= profitability
             except NameError:
                 raise Exception("Something is wrong with TradeHistory. No Long/Short")
 
@@ -174,7 +193,7 @@ class Analyzer:
         initial_capital = format(self.initial_capital, ",")
         hold_new_capital = format(round(self.initial_capital * self.trade_history.last_trade().price /
                                         self.trade_history.first_trade().price, 2), ",")
-        fab_new_capital = format(round(self.capital * self.profit, 5), ",")
+        fab_new_capital = format(round(self.capital * self.pnl, 5), ",")
 
         avg_rr = round(((self.average_win - 1) * 100) / ((1 - self.average_loss) * 100), 5) if \
             self.average_win and self.average_loss != 1 else 0
@@ -198,6 +217,6 @@ class Analyzer:
             Average Risk-Reward:               {avg_rr}
             Minimum Risk-Reward:               {min_rr}
             Win Percentage:                    {round(self.trades_won / (self.trades_lost + self.trades_won), 5)}
-            Profit Factor:                     {round(self.profit, 3)}x
+            Profit Factor:                     {round(self.pnl, 3)}x
         """
         return statement

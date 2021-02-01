@@ -8,6 +8,7 @@ from trading_history import TradeHistory
 import math
 import time
 import numpy as np
+import os
 
 
 class Trader():
@@ -20,11 +21,8 @@ class Trader():
     client: Client object - From binance.py
     capital: float - represents how much money is in account
     leverage: float - how many multiples of your money you want to trade
-    live_trade_history: list of lists - trading data
-    trade_journal: pd.DataFrame - dataframe with all raw data from binance response
     tf: int - timeframe
     df: pd.DataFrame - data that will be analyzed.
-
     Methods
     ----------
     load_account
@@ -41,31 +39,36 @@ class Trader():
     """
 
     def __init__(self):
-        self.symbol = None
+        self.start = False
         self.client = None
         self.capital = None
         self.leverage = 1 / 1000
-        self.live_trade_history = TradeHistory()
-        self.trade_journal = pd.DataFrame()
         self.tf = None
-        self.df = None
-        self.start = False
+        self.symbol = None
         self.loader = _DataLoader()
+        self.df = None
 
-    def check_status(self):
-        status = pd.read_csv(r'C:\Users\haseab\Desktop\Python\PycharmProjects\FAB\local\trade_status.txt').set_index('index')
+
+    def check_status(self) -> bool:
+        """
+        Reads a txt file to see whether user wants trading to be on or off
+        :return boolean of True or False. True means trading is on, and false means it is off.
+        """
+        local_path = os.path.dirname(os.path.dirname(os.path.abspath("__file__"))) + r"\local\trade_status.txt"
+        status = pd.read_csv(local_path).set_index('index')
         self.start = bool(status.loc[0,'status'])
 
-    def load_account(self) -> str:
+    def load_account(self, additional_balance: int = 20000) -> str:
         """
         Sign in to account using API_KEY and using Binance API
         """
-        info = pd.read_csv(r'C:\Users\haseab\Desktop\Python\PycharmProjects\FAB\local\binance_api.txt').set_index('Name')
+        local_path = os.path.dirname(os.path.dirname(os.path.abspath("__file__"))) + r"\local\binance_api.txt"
+        info = pd.read_csv(local_path).set_index('Name')
         API_KEY = info.loc["API_KEY", "Key"]
         SECRET = info.loc["SECRET", "Key"]
         self.client = Client(API_KEY, SECRET)
         # Initializing how much money I have on the exchange. Sample 20000 has been added.
-        self.capital = int(float(self.client.futures_account_balance()[0]['balance'])) + 20000
+        self.capital = int(float(self.client.futures_account_balance()[0]['balance'])) + additional_balance
         return "Welcome Haseab"
 
     def set_leverage(self, leverage: float) -> float:
@@ -103,6 +106,8 @@ class Trader():
 
         # Determining the exact indices of when the set boundaries end
         ranges = np.ceil(np.linspace(0, tf * 235, num=split_number))
+
+        # Converting all indices into integers and reversing the list
         ranges = [int(i) for i in ranges[::-1]]
 
         df = pd.DataFrame()

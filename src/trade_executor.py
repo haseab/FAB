@@ -2,6 +2,8 @@ from trader import Trader
 from helper import Helper
 from datetime import datetime
 from trade import Trade
+import pandas as pd
+from trading_history import TradeHistory
 
 
 class TradeExecutor(Trader):
@@ -10,8 +12,11 @@ class TradeExecutor(Trader):
 
     Attributes
     ----------
-    All attributes from Trader class
-    account: str                -> Response statement from connecting to Binance API
+    live_trade_history: [[]]          list of lists - trading data
+    trade_journal:      [[]]          pd.DataFrame - dataframe with all raw data from binance response
+    account:            str           Response statement from connecting to Binance API
+    latest_trade_info   dict          JSON of the API response once trade is placed on the exchange
+    latest_trade        dict          JSON of the API response once you fetch the last trade
 
     Methods
     -------
@@ -27,12 +32,15 @@ class TradeExecutor(Trader):
 
     def __init__(self):
         super().__init__()
+        self.live_trade_history = TradeHistory()
+        self.trade_journal = pd.DataFrame()
         self.account = self.load_account()
-        self.helper = Helper()
+        self.latest_trade_info = None
+        self.latest_trade = None
 
-    def how_much_to_buy(self, last_price):
+    def how_much_to_buy(self, current_balance, leverage, last_price: str) -> float:
         """Formula that calculates the position size"""
-        return round(Helper.sig_fig(self.capital * self.leverage / float(last_price), 4), 3)
+        return round(Helper.sig_fig(current_balance*leverage / float(last_price), 4), 3)
 
     def enter_market(self, symbol: str, side: str, rule_no: int) -> list:
         """
@@ -76,7 +84,8 @@ class TradeExecutor(Trader):
             'symbol': symbol,
             'side': side,
             'type': 'MARKET',
-            'quantity': self.how_much_to_buy(last_price)
+            # Note the varaibles here self.captial and self.leverage originate from Trader class
+            'quantity': self.how_much_to_buy(self.capital, self.leverage, last_price )
         }
 
         # Creating order to the exchange

@@ -1,6 +1,7 @@
 from trader import Trader
 from backtester import Backtester
 from fab_strategy import FabStrategy
+import os
 
 
 

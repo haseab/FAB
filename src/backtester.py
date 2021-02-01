@@ -5,6 +5,7 @@ from fab_strategy import FabStrategy
 from trading_history import TradeHistory
 from trade import Trade
 import pandas as pd
+import os
 
 
 class Backtester:
@@ -16,12 +17,16 @@ class Backtester:
     trade_history: TradeHistory Object - repr: list of lists Ex.  [['Long', 'Enter', '2018-04-12 12:46:00', 7696.85, 'Rule 3'],
                                                                     ['Long', 'Exit', '2018-04-13 08:05:00', 8125.01, 'Rule 1']]
 
-    csvUrl:  str             - url of the data
-    tf:      int             - timeframe that you want to backtest in.
-    start:   str             - starting date
-    end:     str             - end_date
-    summary: str             - Analyzed metrics saved in a statement
-    loader:  DataLoader Obj  - used to load data.
+    csvUrl:      str             - url of the data
+    tf:          int             - timeframe that you want to backtest in.
+    start:       str             - starting date
+    end:         str             - end_date
+    summary:     str             - Analyzed metrics saved in a statement
+    loader:      DataLoader Obj  - used to load data.
+    symbol_data: pd.DataFrame    - All 1 minute data loaded from csv of given asset
+    range_data:  pd.DataFrame    - Sliced 1 minute data from the loaded asset between two dates
+    tf_data:     pd.DataFrame    - Abstracted data of "range_data", grouped by tf.
+
 
     Methods
     ----------
@@ -31,25 +36,31 @@ class Backtester:
     validate_trades
     start_backtest
 
+
     Please look at each method for descriptions
     """
 
     def __init__(self):
-        self.trade_history = TradeHistory()
-        self.csvUrl = "C:\\Users\\haseab\\Desktop\\Python\\PycharmProjects\\FAB\\data\\Binance BTCUSDT Aug 17 2017 to Jan 12 2021.csv"  # Hard Coded
-        self.tf = None
-        self.start = None
         self.end = datetime.today().strftime('%Y-%m-%d')
-        self.summary = "Nothing to Show Yet"
         self.loader = _DataLoader()
+        self.range_data = None
+        self.symbol_data = None
+        self.start = None
+        self.summary = "Nothing to Show Yet"
+        self.tf = None
+        self.trade_history = TradeHistory()
+        self.tf_data = None
 
-    def set_asset(self, symbol: str, csvUrl: str = None) -> pd.DataFrame:
+
+    def set_asset(self, symbol: str) -> pd.DataFrame:
         """Asset to be backtesting"""
-        if csvUrl == None:
-            csvUrl = self.csvUrl
+        lookup = {"BTCUSDT": os.path.dirname(os.path.dirname(os.path.abspath("__file__")))
+                             + "\data\Binance BTCUSDT Aug 17 2017 to Jan 12 2021.csv",
+                  "ETHUSDT": os.path.dirname(os.path.dirname(os.path.abspath("__file__")))
+                             + "\data\Binance BTCUSDT Aug 17 2017 to Jan 12 2021.csv"}
 
         # Set CSV Url or connect to DB
-        self.symbol_data = self.loader._load_csv(csvUrl)
+        self.symbol_data = self.loader._load_csv(lookup[symbol])
         return self.symbol_data
 
     def set_date_range(self, start: str, end: str = None) -> None:
@@ -67,8 +78,8 @@ class Backtester:
         self.start = start
         if end != None:
             self.end = end
-        self.minute_data = self.loader._get_range(self.symbol_data, self.start, self.end)
-        self.tf_data = self.loader._timeframe_setter(self.minute_data, self.tf)
+        self.range_data = self.loader._get_range(self.symbol_data, self.start, self.end)
+        self.tf_data = self.loader._timeframe_setter(self.range_data, self.tf)
         return
 
     def set_timeframe(self, tf: int) -> int:
@@ -82,9 +93,19 @@ class Backtester:
         self.tf = tf
         return self.tf
 
-    def validate_trades(self) -> [[]]:
-        """ Puts the already given information in a way that is easily debuggable"""
+    def validate_trades(self) -> [[[]]]:
+        """ Puts the already given information in a way that is easily debuggable
+            Groups TradeHistory object by "Enter" & "Exit" and adds the corresponding trade index to it.[
+
+         Example:
+             [['Long', 'Enter', '2017-10-05 15:43:00', 4333.59, 'Rule 1'],
+             ['Long', 'Exit', '2017-10-17 03:38:00', 5669.68, 'Rule 1'],
+             [30.7264]]
+        """
+        # Turning trade index into readable trades. Ex. [1.25,1.35,0.91,1.04] -> [25,35,-9,4]
         adjusted_trades = [-round(100 - i * 100, 4) if i < 1 else round(i * 100 - 1 * 100, 4) for i in self.trades]
+
+        # Grouping 2 at a time, and adding the trade index to the end of each grouped list (look at docstring)
         validation = [self.trade_history[i:i + 2] + [[adjusted_trades[j]]] for i, j in
                       zip(range(1, len(self.trade_history), 2), range(len(adjusted_trades)))]
         return validation

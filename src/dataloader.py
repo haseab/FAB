@@ -11,6 +11,7 @@ class _DataLoader:
 
     Attributes
     -----------
+    client: Client object which is the Binance API Python wrapper
 
     Methods
     ------------
@@ -52,10 +53,11 @@ class _DataLoader:
 
         :return pd.DataFrame of candlestick data.
         """
-        if not now:
+        if now == None:
             now = time.time()
 
         seconds_in_a_minute = 60
+        # Multiplies second timestamp to turn into millisecond timestamp (which binance uses)
         timestamp_adjust = 1000
 
         # Defining params to put in exchange API call
@@ -68,8 +70,8 @@ class _DataLoader:
                                           limit=limit)
         return Helper.into_dataframe(data)
 
-    def _get_range(self, dataframe: pd.DataFrame, start_date: str = '2018-4-1',
-                   end_date: str = '2018-5-1') -> pd.DataFrame:
+    def _get_range(self, dataframe: pd.DataFrame, start_date: str = None,
+                   end_date: str = None) -> pd.DataFrame:
         """Returns the range of 1-min data within specified start & end date from the entire dataset
 
             Parameters
@@ -80,6 +82,9 @@ class _DataLoader:
 
             :return dataframe
         """
+        if start_date == None or end_date == None:
+            raise Exception("No Start date given")
+
         start_date = int(time.mktime(datetime.strptime(start_date, "%Y-%m-%d").timetuple()))
         end_date = int(time.mktime(datetime.strptime(end_date, "%Y-%m-%d").timetuple()))
         return dataframe.loc[start_date:end_date]
@@ -122,6 +127,7 @@ class _DataLoader:
         :return dataframe
         """
         if shift == None:
+            # This is making sure that there it shifts so that the last tf candle includes the last 1-minute candle
             shift = tf - len(dataframe) % tf - 1
 
         dataframe[["Open", "High", "Low", "Close", "Volume"]] = dataframe[
@@ -153,6 +159,7 @@ class _DataLoader:
         """
 
         if shift == None:
+            # This is making sure that there it shifts so that the last tf candle includes the last 1-minute candle
             shift = tf - len(df_raw) % tf - 1
 
         tf = 77
