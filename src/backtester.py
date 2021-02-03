@@ -93,37 +93,40 @@ class Backtester:
         self.tf = tf
         return self.tf
 
-    def validate_trades(self) -> [[[]]]:
+    def validate_trades(self, trade_index: [float], trade_history: TradeHistory) -> [[[]]]:
         """ Puts the already given information in a way that is easily debuggable
             Groups TradeHistory object by "Enter" & "Exit" and adds the corresponding trade index to it.[
 
+        trade_index: a list of pnl percentages
+        trade_history: TradeHistory object which is just a list of Trade objects.
          Example:
              [['Long', 'Enter', '2017-10-05 15:43:00', 4333.59, 'Rule 1'],
              ['Long', 'Exit', '2017-10-17 03:38:00', 5669.68, 'Rule 1'],
              [30.7264]]
         """
         # Turning trade index into readable trades. Ex. [1.25,1.35,0.91,1.04] -> [25,35,-9,4]
-        adjusted_trades = [-round(100 - i * 100, 4) if i < 1 else round(i * 100 - 1 * 100, 4) for i in self.trades]
+        adjusted_trades = [-round(100 - i * 100, 4) if i < 1 else round(i * 100 - 1 * 100, 4) for i in trade_index]
 
         # Grouping 2 at a time, and adding the trade index to the end of each grouped list (look at docstring)
-        validation = [self.trade_history[i:i + 2] + [[adjusted_trades[j]]] for i, j in
-                      zip(range(1, len(self.trade_history), 2), range(len(adjusted_trades)))]
+        validation = [trade_history[i:i + 2] + [[adjusted_trades[j]]] for i, j in
+                      zip(range(1, len(trade_history), 2), range(len(adjusted_trades)))]
         return validation
 
-    def start_backtest(self, strategy: FabStrategy, sensitivity) -> str:
+    def start_backtest(self, df: pd.DataFrame, strategy: FabStrategy, sensitivity: float) -> str:
         """
         Tests the asset in history, with respect to the rules outlined in the FabStrategy class.
         It adds applicable trades to a list and then an Analyzer object summarizes the profitability
 
         Parameters:
         -----------
+        df:          pd.DataFrame - The abstracted tf data that is ready for backtesting. This is not minute data if tf != 1
         strategy:    Object - any trading strategy that takes the index and sensitivity as input, and returns boolean values.
         sensitivity: float  - Allowance between price and MA. The larger the value, the further and less sensitive.
 
 
         :return str - A summary of all metrics in the backtest. (See Analyzer.summarize_statistics method for more info)
         """
-        df = self.tf_data
+
         self.trade_history = TradeHistory()
 
         # Converting Datetime column from Timestamp objects into strings
@@ -177,9 +180,9 @@ class Backtester:
         analyze_backtest.calculate_statistics(self.trade_history)
 
         # Adding all trades in a list. They are in the form of: 1+profit margin. Ex. [1.04, 0.97, 1.12] etc.
-        self.trades = analyze_backtest.trades
+        self.trades = analyze_backtest.get_trades()
 
-        self.profit = round(analyze_backtest.profit, 3)
+        self.pnl = round(analyze_backtest.get_pnl(), 3)
         self.summary = analyze_backtest.summarize_statistics()
 
         return self.summary

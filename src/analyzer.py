@@ -106,6 +106,13 @@ class Analyzer:
         longest_counter = max(longest_counter, current_counter)
         return longest_drawdown, longest_counter
 
+
+    def get_trades(self):
+        return self.trades
+
+    def get_pnl(self):
+        return self.pnl
+
     def calculate_statistics(self, trade_history: TradeHistory) -> str:
         """
         Calculates the following metrics:

@@ -81,7 +81,8 @@ class Trader():
         self.tf = tf
         return self.tf
 
-    def get_necessary_data(self, symbol: str, tf: int) -> pd.DataFrame:
+
+    def get_necessary_data(self, symbol: str, tf: int, max_candles_needed:int) -> pd.DataFrame:
         """
         Gets the minimum necessary data to trade this asset. Only a symbol and timeframe need to be inputted
 
@@ -90,27 +91,16 @@ class Trader():
         using the _get_binance_futures_candles method, and then all of them will be merged together.
 
         Parameters:
-        symbol: str     Ex. "BTCUSDT", "ETHUSDT"
-        tf: int         Ex. 1, 3, 5, 77, 100
+        symbol: str             - Symbol of price ticker   Ex. "BTCUSDT", "ETHUSDT"
+        tf: int                 - Timeframe wanted   Ex. 1, 3, 5, 77, 100
+        max_candles_needed: int - Maximum candles needed in the desired timeframe     Ex. 231, 770, 1440
 
         :return pd.DataFrame of candlestick data
 
         """
         now = time.time()
-
-        # The 231 MA needs 231 candles of data to work. We use 4 more candles for safety.
-        maximum_candles_needed = 235
-
-        # Formula for determining how many discrete sets are needed
-        split_number = math.ceil(tf * maximum_candles_needed / 1000) + 1
-
-        # Determining the exact indices of when the set boundaries end
-        ranges = np.ceil(np.linspace(0, tf * 235, num=split_number))
-
-        # Converting all indices into integers and reversing the list
-        ranges = [int(i) for i in ranges[::-1]]
-
         df = pd.DataFrame()
+        ranges = Helper.determine_candle_positions(max_candles_needed,tf)
 
         # Grabbing each set of about 1000 candles and appending them one after the other
         for i in range(len(ranges)):
@@ -120,7 +110,7 @@ class Trader():
                 pass
         return df.drop_duplicates()
 
-    def _update_data(self, diff: int) -> None:
+    def _update_data(self, diff: int, symbol: str, ) -> None:
         """
         Used to update the trading data with the exchange data so that it is real time
 
@@ -134,7 +124,8 @@ class Trader():
         minutes = math.floor(diff) + 1
 
         # Getting minute candlestick data. Number of minute candlesticks represented by "minutes" variable
-        last_price = self.loader._get_binance_futures_candles("BTCUSDT", minutes)
+        last_price = self.loader._get_binance_futures_candles(symbol, minutes)
+        # Adding a legible Datetime column and using the timestamp data to obtain datetime data
         last_price['Datetime'] = [datetime.fromtimestamp(i / 1000) for i in last_price.index]
         last_price = last_price[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
 
@@ -158,7 +149,7 @@ class Trader():
         """
         return float([i["positionAmt"] for i in self.client.futures_position_information() if i['symbol'] == symbol][0])
 
-    def set_asset(self, symbol: str) -> str:
+    def set_asset(self, symbol: str, tf: int) -> str:
         """
         Set Symbol of the ticker and load the necessary data with the given timeframe to trade it
 
@@ -169,27 +160,31 @@ class Trader():
         :return str response
         """
         self.symbol = symbol
+        max_candles_needed = 231
+
         # For Binance API purposes, 240 min needs to be inputted as "4h" on binance when fetching data
         map_tf = {1: "1m", 3: "3m", 5: "5m", 15: "15m", 30: "30m", 60: "1h", 120: "2h", 240: "4h", 360: "6h", 480: "8h"}
 
-        startTime = int((time.time() - self.tf * 235 * 60) * 1000)
+        start_time = int((time.time() - self.tf * 235 * 60) * 1000)
 
-        if self.tf in [1, 3, 5, 15, 30, 60, 120, 240, 360, 480]:  # Note: 12H, 1D, 3D, 1W, 1M are also recognized
+        if tf in [1, 3, 5, 15, 30, 60, 120, 240, 360, 480]:  # Note: 12H, 1D, 3D, 1W, 1M are also recognized
 
             # Fetching data from Binance if it matches the eligible timeframe, as it will be faster
-            self.df = Helper.into_dataframe(
-                self.client.futures_klines(symbol=symbol, interval=map_tf[self.tf], startTime=startTime))
-            self.df.drop(self.df.tail(1).index, inplace=True)
+            df = Helper.into_dataframe(
+                self.client.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time))
+            df.drop(df.tail(1).index, inplace=True)
 
         else:
             # If it doesn't match Binance available timeframes, it must be transformed after fetching 1m data.
-            self.df = self.get_necessary_data(symbol, self.tf)
-            self.df = self.loader._timeframe_setter(self.df, self.tf)
+            df = self.get_necessary_data(symbol, tf, max_candles_needed)
+            df = self.loader._timeframe_setter(df, tf)
 
         # Adding Datetime column for readability of the timestamp. Also more formatting done
-        self.df['Datetime'] = [datetime.fromtimestamp(i / 1000) for i in self.df.index]
-        self.df = self.df[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
-        self.df[["Open", "High", "Low", "Close", "Volume"]] = self.df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
+        df['Datetime'] = [datetime.fromtimestamp(i / 1000) for i in df.index]
+        df = df[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
+        df[["Open", "High", "Low", "Close", "Volume"]] = df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
+
+        self.df = df
 
         return f"Symbol changed to {self.symbol}"
 
@@ -225,7 +220,7 @@ class Trader():
 
         # Adding to previous candlestick data of the last row by updating the row.
         dfrow = pd.DataFrame([[open_date, datetime.fromtimestamp(open_date / 1000), open_price, max(high), min(low),
-                               close, sum(volume)]], \
+                               close, sum(volume)]],
                              columns=["Timestamp", "Datetime", "Open", "High", "Low", "Close", "Volume"])
 
         dfrow[["Open", "High", "Low", "Close", "Volume"]] = dfrow[["Open", "High", "Low", "Close", "Volume"]].astype(
@@ -239,7 +234,7 @@ class Trader():
         self.df = df
         return self.df
 
-    def start_trading(self, strategy: FabStrategy, executor, sensitivity=0, debug=False) -> None:
+    def start_trading(self, strategy: FabStrategy, executor, tf: int,  sensitivity=0, debug=False) -> str:
         """
         Starts the process of trading live. Each minute, the last row of the data is updated and Rule #2 is checked,
         otherwise, it waits till the end of the timeframe where it gets the latest data before it checks the rest of the rules.
@@ -256,11 +251,12 @@ class Trader():
         strategy.load_data(self.df)
         strategy.create_objects()
 
+        # Checking to see whether trading is on or off. If it is off then it will not enter while loop.
         self.check_status()
 
         while self.start != False:
-            diff = Helper.calculate_minute_disparity(self.df, self.tf)
-            if round(time.time() % 60, 1) == 0 and diff <= self.tf:
+            diff = Helper.calculate_minute_disparity(self.df, tf)
+            if round(time.time() % 60, 1) == 0 and diff <= tf:
 
                 # Getting the most up-to-date row of the <tf>-min candlestick
                 dfrow, high, low, volume, open_price, open_date = self.make_row(high, low, volume, count, open_price,
@@ -268,7 +264,7 @@ class Trader():
 
                 if debug == True:
                     print(dfrow)
-                    print(f"{self.tf - diff} minutes left")
+                    print(f"{tf - diff} minutes left")
 
                 # Updating moving averages
                 strategy.load_data(self.df.append(dfrow))
@@ -286,9 +282,9 @@ class Trader():
 
                 count += 1
 
-            elif diff > self.tf:
-                # Choosing to update data using Binance API instead of appending the completed final row from the while loop
-                self._update_data(math.floor(diff))
+            elif diff > tf:
+                # Updating data using Binance API instead of appending the completed final row from the while loop
+                self._update_data(math.floor(diff), "BTCUSDT")
 
                 # Updating Moving averages
                 strategy.load_data(self.df)

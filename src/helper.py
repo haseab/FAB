@@ -2,6 +2,7 @@ import math
 import pandas as pd
 from datetime import datetime, timedelta
 import time
+import numpy as np
 
 
 class Helper:
@@ -29,3 +30,17 @@ class Helper:
         # Performing calculation to get the difference
         diff = (current_minute - last_minute - timedelta(minutes=tf)).seconds / 60
         return diff
+
+    def determine_candle_positions(max_candles_needed, tf):
+        # Ex. The 231 MA needs 231 candles of data to work. We use 4 more candles for safety.
+        max_candles_needed += 4
+
+        # Formula for determining how many discrete 1000-candle sets are needed
+        split_number = math.ceil(tf * max_candles_needed / 1000) + 1
+
+        # Determining the exact indices of when the set boundaries end
+        ranges = np.ceil(np.linspace(0, tf * 235, num=split_number))
+
+        # Converting all indices into integers and reversing the list
+        ranges = [int(i) for i in ranges[::-1]]
+        return ranges
