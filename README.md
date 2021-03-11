@@ -87,14 +87,13 @@ A number of things must be done in order to backtest successfully. You need to
 
 <pre>
 b = Backtester()
-b.set_asset("BTCUSDT")
 b.set_timeframe(77)
+b.set_asset("BTCUSDT")
 b.set_date_range("2018-01-01", "2019-01-01")
 </pre>
 
 **Note**: It is important to run these commands in order. 
-- You can't set the range without setting the timeframe first. 
-- You can't set the timeframe without setting the asset first
+- You can't set the range without setting the timeframe & asset first. 
 
 
 Once those are done, you can initiate backtesting by the following command: 
