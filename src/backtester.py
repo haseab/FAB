@@ -4,6 +4,7 @@ from analyzer import Analyzer
 from fab_strategy import FabStrategy
 from trading_history import TradeHistory
 from trade import Trade
+from helper import Helper
 import pandas as pd
 import os
 
@@ -41,15 +42,17 @@ class Backtester:
     """
 
     def __init__(self):
-        self.end = datetime.today().strftime('%Y-%m-%d')
         self.loader = _DataLoader()
         self.range_data = None
         self.symbol_data = None
         self.start = None
-        self.summary = "Nothing to Show Yet"
+        self.end = datetime.today().strftime('%Y-%m-%d')
         self.tf = None
         self.trade_history = TradeHistory()
         self.tf_data = None
+        self.pnl = None
+        self.trades = None
+        self.summary = "Nothing to Show Yet"
 
 
     def set_asset(self, symbol: str) -> pd.DataFrame:
@@ -104,13 +107,17 @@ class Backtester:
              ['Long', 'Exit', '2017-10-17 03:38:00', 5669.68, 'Rule 1'],
              [30.7264]]
         """
-        # Turning trade index into readable trades. Ex. [1.25,1.35,0.91,1.04] -> [25,35,-9,4]
-        adjusted_trades = [-round(100 - i * 100, 4) if i < 1 else round(i * 100 - 1 * 100, 4) for i in trade_index]
+        # Ex. [1.25,1.35,0.91,1.04] -> [25,35,-9,4]
+        trade_index_percentage = Helper.factor_to_percentage(trade_index)
+        trade_history_range = range(1, len(self.trade_history), 2)
+        trade_index_range = range(len(trade_index_percentage))
 
-        # Grouping 2 at a time, and adding the trade index to the end of each grouped list (look at docstring)
-        validation = [trade_history[i:i + 2] + [[adjusted_trades[j]]] for i, j in
-                      zip(range(1, len(trade_history), 2), range(len(adjusted_trades)))]
-        return validation
+        compiled_list = []
+
+        for i, j in zip(trade_history_range, trade_index_range):
+            compiled_list.append(self.trade_history[i:i + 2] + [[trade_index_percentage[j]]])
+
+        return compiled_list
 
     def start_backtest(self, df: pd.DataFrame, strategy: FabStrategy, sensitivity: float) -> str:
         """
@@ -129,51 +136,49 @@ class Backtester:
 
         self.trade_history = TradeHistory()
 
-        # Converting Datetime column from Timestamp objects into strings
-        date = [str(df['Datetime'].iloc[i]) for i in range(len(df['Datetime']))]
+        list_of_str_dates = Helper.timestamp_object_to_string(df['Datetime'])
 
         # Creating necessary moving averages from FabStrategy class
         strategy.load_data(df)
-        strategy.create_objects()
+        strategy.update_moving_averages()
 
         # Iterating through every single data point and checking if rules apply.
         for i in range(231, len(df) - 1):
 
             # Second condition ensures you aren't doubled entering
             if strategy.rule_1_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Long", "Enter", date[i], strategy.price[i], "Rule 1"]))
+                self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
 
             # Second condition ensures that the previous trade was entering so that it can exit.
-
             elif strategy.rule_1_buy_exit(i) and self.trade_history.last_trade().side == "Long" \
                     and self.trade_history.last_trade().status == "Enter":
-                self.trade_history.append(Trade(["Long", "Exit", date[i], strategy.price[i], "Rule 1"]))
+                self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
 
             elif strategy.rule_1_short_enter(i) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Short", "Enter", date[i], strategy.price[i], "Rule 1"]))
+                self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
 
             elif strategy.rule_1_short_exit(i) and self.trade_history.last_trade().side == "Short" \
                     and self.trade_history.last_trade().status == "Enter":
-                self.trade_history.append(Trade(["Short", "Exit", date[i], strategy.price[i], "Rule 1"]))
+                self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
 
             elif strategy.rule_2_buy_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Long", "Enter", date[i], strategy.black[i], "Rule 2"]))
+                self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.black[i], "Rule 2"]))
 
             elif strategy.rule_2_buy_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
                     self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
-                self.trade_history.append(Trade(["Long", "Exit", date[i], strategy.price[i], "Rule 2"]))
+                self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 2"]))
 
             elif strategy.rule_2_short_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Short", "Enter", date[i], strategy.black[i], "Rule 2"]))
+                self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.black[i], "Rule 2"]))
             elif strategy.rule_2_short_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
                     self.trade_history.last_trade().side == "Short" and self.trade_history.last_trade().status == "Enter":
-                self.trade_history.append(Trade(["Short", "Exit", date[i], strategy.price[i], "Rule 2"]))
+                self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 2"]))
 
             elif strategy.rule_3_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Long", "Enter", date[i], strategy.price[i], "Rule 3"]))
+                self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 3"]))
 
             elif strategy.rule_3_short_enter(i) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Short", "Enter", date[i], strategy.price[i], "Rule 3"]))
+                self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 3"]))
 
         # Analyzing the trade history
         analyze_backtest = Analyzer()
@@ -181,8 +186,7 @@ class Backtester:
 
         # Adding all trades in a list. They are in the form of: 1+profit margin. Ex. [1.04, 0.97, 1.12] etc.
         self.trades = analyze_backtest.get_trades()
-
-        self.pnl = round(analyze_backtest.get_pnl(), 3)
+        self.pnl = round(analyze_backtest.get_pnl(self.trades), 3)
         self.summary = analyze_backtest.summarize_statistics()
 
         return self.summary

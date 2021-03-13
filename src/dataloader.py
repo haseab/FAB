@@ -22,6 +22,7 @@ class _DataLoader:
 
     Please look at each method for descriptions
     """
+    SECOND_TO_MILLISECOND = 1000
 
     def __init__(self):
         self.client = Client()
@@ -56,18 +57,13 @@ class _DataLoader:
         if now == None:
             now = time.time()
 
-        seconds_in_a_minute = 60
-        # Multiplies second timestamp to turn into millisecond timestamp (which binance uses)
-        timestamp_adjust = 1000
-
         # Defining params to put in exchange API call
-        startTime = (int(now) - seconds_in_a_minute * (
-            start_minutes_ago) - 1) * timestamp_adjust  # Ex. 1609549634 -> in seconds
-        endTime = int(now - seconds_in_a_minute * end_minutes_ago) * timestamp_adjust
-        limit = abs(start_minutes_ago - end_minutes_ago)
+        start_time = Helper().minutes_ago_to_timestamp(start_minutes_ago,now, adjust=self.SECOND_TO_MILLISECOND)
+        end_time = Helper().minutes_ago_to_timestamp(end_minutes_ago, now, adjust=self.SECOND_TO_MILLISECOND)
+        num_candles = abs(start_minutes_ago - end_minutes_ago)
 
-        data = self.client.futures_klines(symbol=symbol, interval="1m", startTime=startTime, endTime=endTime,
-                                          limit=limit)
+        data = self.client.futures_klines(symbol=symbol, interval="1m", startTime=start_time, endTime=end_time, limit=num_candles)
+
         return Helper.into_dataframe(data)
 
     def _get_range(self, dataframe: pd.DataFrame, start_date: str = None,
@@ -85,11 +81,11 @@ class _DataLoader:
         if start_date == None or end_date == None:
             raise Exception("No Start date given")
 
-        start_date = int(time.mktime(datetime.strptime(start_date, "%Y-%m-%d").timetuple()))
-        end_date = int(time.mktime(datetime.strptime(end_date, "%Y-%m-%d").timetuple()))
+        start_date = Helper.string_to_timestamp(start_date)
+        end_date = Helper.string_to_timestamp(end_date)
         return dataframe.loc[start_date:end_date]
 
-    def _timeframe_setter(self, dataframe: pd.DataFrame, tf: int, shift: int = None) -> pd.DataFrame:
+    def _timeframe_setter(self, dataframe: pd.DataFrame, tf: int, shift: int = 0, drop_last_row=True) -> pd.DataFrame:
         """ Vertical way of abstracting data
         Converts minute candlestick data into the timeframe(tf) of choice.
         Parameters
@@ -145,7 +141,8 @@ class _DataLoader:
         df['Close'] = [dataframe['Close'].iloc[i:tf + i].iloc[-1] for i in range(shift, len(dataframe['Close']), tf)]
 
         # Dropping the last value, this gets rid of the candle that isn't complete until the end of the tf
-        df.drop(df.tail(1).index, inplace=True)
+        if drop_last_row:
+            df.drop(df.tail(1).index, inplace=True)
 
         return df
 

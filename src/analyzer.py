@@ -1,4 +1,5 @@
 from trading_history import TradeHistory
+from exceptions import Exceptions
 
 class Analyzer:
     """
@@ -36,23 +37,78 @@ class Analyzer:
     """
     def __init__(self):
         self.capital = None
-        self.pnl = None
-        self.gross_profit = None
-        self.gross_loss = None
         self.initial_capital = None
-        self.largest_profit = None
-        self.largest_loss = None
-        self.longest_run = None
-        self.longest_drawdown = None
-        self.average_win = None
-        self.average_loss = None
-        self.trades_won = None
-        self.trades_lost = None
-        self.lose_streak = None
         self.trades = None
         self.trade_history = None
-        self.win_streak = None
 
+
+    def get_capital(self):
+        return self.capital
+
+    def get_initial_capital(self):
+        return self.initial_capital
+
+    def get_trades(self):
+        return self.trades
+
+    def get_trade_history(self):
+        return self.trade_history
+
+    def get_largest_profit(self, trades):
+        return max(trades)
+
+    def get_largest_loss(self, trades):
+        return min(trades)
+
+    def get_average_win(self, gross_profit, num_trades_won):
+        return gross_profit ** (1 / num_trades_won) if num_trades_won != 0 else 1
+
+    def get_average_loss(self, gross_loss, num_trades_lost):
+        return gross_loss ** (1 / num_trades_lost) if num_trades_lost != 0 else 1
+
+    def get_num_trades_won(self, trades):
+        return len([i for i in trades if i > 1])
+
+    def get_num_trades_lost(self, trades):
+        return len([i for i in trades if i <= 1])
+
+    def get_longest_run(self, trades):
+        return self.calculate_longest_run(trades)[0]
+
+    def get_longest_drawdown(self, trades):
+        return self.calculate_longest_drawdown(trades)[0]
+
+    def get_lose_streak(self, trades):
+        return self.calculate_longest_drawdown(trades)[1]
+
+    def get_win_streak(self, trades):
+        return self.calculate_longest_run(trades)[1]
+
+    def get_pnl(self, trades):
+        sums = 1
+        for i in trades:
+            sums *= i
+        return sums
+
+    def get_gross_profit(self, trades):
+        sums = 1
+        for i in trades:
+            if i > 1:
+                sums *= i
+        return sums
+
+    def get_gross_loss(self, trades):
+        sums = 1
+        for i in trades:
+            if i < 1:
+                sums *= i
+        return sums
+
+    def calculate_short_profitability(self, enter_price, exit_price, commission):
+        return (commission ** 2) * (2 - exit_price / enter_price)
+
+    def calculate_long_profitability(self, enter_price, exit_price, commission):
+        return (commission ** 2) * (exit_price / enter_price)
 
     def calculate_longest_run(self, trade_index: [float]) -> (float, int):
         """
@@ -107,13 +163,7 @@ class Analyzer:
         return longest_drawdown, longest_counter
 
 
-    def get_trades(self):
-        return self.trades
-
-    def get_pnl(self):
-        return self.pnl
-
-    def calculate_statistics(self, trade_history: TradeHistory) -> str:
+    def calculate_statistics(self, trade_history: TradeHistory, commission= 0.9996) -> str:
         """
         Calculates the following metrics:
         Profit Factor, trades won, trades lost, gross profit, gross loss, largest profit, largest loss
@@ -125,53 +175,28 @@ class Analyzer:
         """
         # Initializing all variables
         self.trade_history = trade_history
-        self.pnl = 1
-        commission = 0.9996
-        self.trades_won, self.trades_lost = 0, 0
-        self.gross_profit, self.gross_loss = 1, 1
-        self.largest_profit, self.largest_loss = 1, 1
         self.trades = []
+        profitability = 1
 
-        if self.trade_history.allTrades == [['List of Trades']]:
-            return "Not enough data to provide statistics"
+        Exceptions.check_empty_trade_history(self.trade_history.allTrades)
 
         # Ensures all reported trades have been closed
         if self.trade_history.last_trade().status == "Enter":
             self.trade_history.allTrades = self.trade_history[:-1]
 
-        # Every set of 2 consecutive rows is an "Enter" and an "Exit" trade. Considered as one trade
         for i in range(1, len(self.trade_history), 2):
+            enter_trade = trade_history[i]
+            exit_trade = trade_history[i+1]
+            Exceptions.check_trade_status_exists(enter_trade)
 
-            one_trade = trade_history[i:i + 2]  # Length of 2
-            if one_trade[0].status != "Enter" or one_trade[1].status != "Exit":
-                raise Exception("Trading History doesn't have alternating Entering and Exit positions")
-
-            if one_trade[0][0] == "Short":
-                # 0.999 is considering commission costs. The rest is an equation for profitability
-                profitability = (commission**2) * (2 - one_trade[1][3] / one_trade[0][3])
-            elif one_trade[0][0] == "Long":
-                profitability = (commission**2) * (one_trade[1][3] / one_trade[0][3])
-
-            try:
-                self.pnl *= profitability
-            except NameError:
-                raise Exception("Something is wrong with TradeHistory. No Long/Short")
+            if enter_trade.side == "Short":
+                profitability = self.calculate_short_profitability(enter_trade.price, exit_trade.price, commission)
+            elif enter_trade.side == "Long":
+                profitability = self.calculate_long_profitability(enter_trade.price, exit_trade.price, commission)
 
             # Final form of profitability is: 1 + profit margin. Profit margin CAN be negative here.
             self.trades.append(round(profitability, 6))
-            if profitability > 1:
-                self.trades_won += 1
-                self.gross_profit *= profitability
-            elif profitability < 1:
-                self.trades_lost += 1
-                self.gross_loss *= profitability
-            self.largest_loss = min(profitability, self.largest_loss)
-            self.largest_profit = max(profitability, self.largest_profit)
 
-        self.longest_run, self.win_streak = self.calculate_longest_run(self.trades)
-        self.longest_drawdown, self.lose_streak = self.calculate_longest_drawdown(self.trades)
-        self.average_win = self.gross_profit ** (1 / self.trades_won) if self.trades_won != 0 else 1
-        self.average_loss = self.gross_loss ** (1 / self.trades_lost) if self.trades_lost != 0 else 1
         return "calculated stats"
 
     def summarize_statistics(self, capital: float = 9083.0) -> str:
@@ -194,18 +219,32 @@ class Analyzer:
             Profit Factor:                     X
 
         """
+        trades = self.get_trades()
+
+        pnl = self.get_pnl(trades)
 
         initial_price = format(round(float(self.trade_history.first_trade().price), 2), ",")
         final_price = format(float(self.trade_history.last_trade().price), ",")
         initial_capital = format(self.initial_capital, ",")
         hold_new_capital = format(round(self.initial_capital * self.trade_history.last_trade().price /
                                         self.trade_history.first_trade().price, 2), ",")
-        fab_new_capital = format(round(self.capital * self.pnl, 5), ",")
+        fab_new_capital = format(round(self.capital * pnl, 5), ",")
 
-        avg_rr = round(((self.average_win - 1) * 100) / ((1 - self.average_loss) * 100), 5) if \
-            self.average_win and self.average_loss != 1 else 0
-        min_rr = round((self.longest_run - 1) / (1 - self.longest_drawdown), 5) if \
-            self.longest_run and self.longest_drawdown != 1 else 0
+        average_win = self.get_average_win(self.get_gross_profit(trades), self.get_num_trades_won(trades))
+        average_loss = self.get_average_loss(self.get_gross_loss(trades), self.get_num_trades_lost(trades))
+        longest_run = self.get_longest_run(trades)
+        longest_drawdown = self.get_longest_drawdown(trades)
+        win_streak = self.get_win_streak(trades)
+        lose_streak = self.get_lose_streak(trades)
+        num_trades_lost = self.get_num_trades_lost(trades)
+        num_trades_won = self.get_num_trades_won(trades)
+        largest_profit = self.get_largest_profit(trades)
+        largest_loss = self.get_largest_loss(trades)
+
+        avg_rrr = round(((average_win - 1) * 100) / ((1 - average_loss) * 100), 5) if \
+            average_win and average_loss != 1 else 0
+        min_rrr = round((longest_run - 1) / (1 - longest_drawdown), 5) if \
+            longest_run and longest_drawdown != 1 else 0
 
         statement = f""" 
         Data is provided from {self.trade_history.first_trade().datetime} to {self.trade_history.last_trade().datetime}
@@ -215,15 +254,15 @@ class Analyzer:
         However, using the FAB method, it would be: {fab_new_capital} now
 
         Strategy statistics:
-            Number of Trades:                  {self.trades_lost + self.trades_won} 
-            Trades Won vs Trades Lost:         {self.trades_won} vs {self.trades_lost} 
-            Largest Profit vs Largest Loss:    {round(self.largest_profit, 5)} vs {round(self.largest_loss, 5)}
-            Win Streak vs Losing Streak:       {self.win_streak} vs {self.lose_streak}
-            Largest Run vs Largest Drawdown:   {round(self.longest_run, 5)} vs {round(self.longest_drawdown, 5)}
-            Profit vs Loss Per Trade:          {round(self.average_win, 5)} vs {round(self.average_loss, 5)}
-            Average Risk-Reward:               {avg_rr}
-            Minimum Risk-Reward:               {min_rr}
-            Win Percentage:                    {round(self.trades_won / (self.trades_lost + self.trades_won), 5)}
-            Profit Factor:                     {round(self.pnl, 3)}x
+            Number of Trades:                  {num_trades_lost + num_trades_won} 
+            Trades Won vs Trades Lost:         {num_trades_won} vs {num_trades_lost} 
+            Largest Profit vs Largest Loss:    {round(largest_profit, 5)} vs {round(largest_loss, 5)}
+            Win Streak vs Losing Streak:       {win_streak} vs {lose_streak}
+            Largest Run vs Largest Drawdown:   {round(longest_run, 5)} vs {round(longest_drawdown, 5)}
+            Profit vs Loss Per Trade:          {round(average_win, 5)} vs {round(average_loss, 5)}
+            Average Risk-Reward:               {avg_rrr}
+            Minimum Risk-Reward:               {min_rrr}
+            Win Percentage:                    {round(num_trades_won / (num_trades_lost + num_trades_won), 5)}
+            Profit Factor:                     {round(pnl, 3)}x
         """
         return statement

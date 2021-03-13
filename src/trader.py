@@ -48,17 +48,17 @@ class Trader():
         self.loader = _DataLoader()
         self.df = None
 
-
-    def check_status(self) -> bool:
+    def check_on_switch(self) -> bool:
         """
         Reads a txt file to see whether user wants trading to be on or off
         :return boolean of True or False. True means trading is on, and false means it is off.
         """
         local_path = os.path.dirname(os.path.dirname(os.path.abspath("__file__"))) + r"\local\trade_status.txt"
         status = pd.read_csv(local_path).set_index('index')
-        self.start = bool(status.loc[0,'status'])
+        self.start = bool(status.loc[0, 'status'])
+        return self.start
 
-    def load_account(self, additional_balance: int = 20000) -> str:
+    def load_account(self, additional_balance: int = 0) -> str:
         """
         Sign in to account using API_KEY and using Binance API
         """
@@ -67,7 +67,6 @@ class Trader():
         API_KEY = info.loc["API_KEY", "Key"]
         SECRET = info.loc["SECRET", "Key"]
         self.client = Client(API_KEY, SECRET)
-        # Initializing how much money I have on the exchange. Sample 20000 has been added.
         self.capital = int(float(self.client.futures_account_balance()[0]['balance'])) + additional_balance
         return "Welcome Haseab"
 
@@ -81,10 +80,9 @@ class Trader():
         self.tf = tf
         return self.tf
 
-
-    def get_necessary_data(self, symbol: str, tf: int, max_candles_needed:int) -> pd.DataFrame:
+    def get_necessary_data(self, symbol: str, tf: int, max_candles_needed: int) -> pd.DataFrame:
         """
-        Gets the minimum necessary data to trade this asset. Only a symbol and timeframe need to be inputted
+        Gets the minimum necessary data to trade this asset.
 
         Note: This method is used as a way to tackle the 1000 candle limit that is currently on the Binance API.
         A discrete set of ~1000 group candles will be determined, and then the data will be extracted from each,
@@ -100,9 +98,8 @@ class Trader():
         """
         now = time.time()
         df = pd.DataFrame()
-        ranges = Helper.determine_candle_positions(max_candles_needed,tf)
+        ranges = Helper.determine_candle_positions(max_candles_needed, tf)
 
-        # Grabbing each set of about 1000 candles and appending them one after the other
         for i in range(len(ranges)):
             try:
                 df = df.append(self.loader._get_binance_futures_candles(symbol, int(ranges[i]), int(ranges[i + 1]), now))
@@ -120,22 +117,21 @@ class Trader():
 
         :return dataframe with the most up-to-date data.
         """
-        # Calculating how many minutes to fetch from API
-        minutes = math.floor(diff) + 1
+        minutes_disparity = math.floor(diff) + 1
 
         # Getting minute candlestick data. Number of minute candlesticks represented by "minutes" variable
-        last_price = self.loader._get_binance_futures_candles(symbol, minutes)
+        last_few_candles = self.loader._get_binance_futures_candles(symbol, minutes_disparity)
         # Adding a legible Datetime column and using the timestamp data to obtain datetime data
-        last_price['Datetime'] = [datetime.fromtimestamp(i / 1000) for i in last_price.index]
-        last_price = last_price[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
+        last_few_candles['Datetime'] = Helper.millisecond_timestamp_to_datetime(last_few_candles.index)
+        last_few_candles = last_few_candles[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
 
         # Abstracting minute data into appropriate tf
-        last_price = self.loader._timeframe_setter(last_price, self.tf, 0)
+        last_few_candles = self.loader._timeframe_setter(last_few_candles, self.tf, 0)
 
         # Updating original data with new data.
-        self.df = self.df.append(last_price).drop_duplicates()
+        self.df = self.df.append(last_few_candles).drop_duplicates()
 
-    def get_position(self, symbol: str) -> float:
+    def get_position_amount(self, symbol: str) -> float:
         """
         Gets the total amount of current position for a given symbol
         Parameters:
@@ -147,9 +143,12 @@ class Trader():
         Returns float
             Ex. If a 1.000 BTC position is open, it will return 1.0
         """
-        return float([i["positionAmt"] for i in self.client.futures_position_information() if i['symbol'] == symbol][0])
+        for i in self.client.futures_position_information():
+            if i['symbol'] == symbol:
+                return float(i["positionAmt"])
+        return None
 
-    def set_asset(self, symbol: str, tf: int) -> str:
+    def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 231) -> str:
         """
         Set Symbol of the ticker and load the necessary data with the given timeframe to trade it
 
@@ -159,80 +158,76 @@ class Trader():
 
         :return str response
         """
-        self.symbol = symbol
-        max_candles_needed = 231
-
         # For Binance API purposes, 240 min needs to be inputted as "4h" on binance when fetching data
         map_tf = {1: "1m", 3: "3m", 5: "5m", 15: "15m", 30: "30m", 60: "1h", 120: "2h", 240: "4h", 360: "6h", 480: "8h"}
+        minutes_ago = tf * (max_candles_needed + 3)
+        start_time = Helper().minutes_ago_to_timestamp(minutes_ago, time.time(), 1000)
 
-        start_time = int((time.time() - self.tf * 235 * 60) * 1000)
-
-        if tf in [1, 3, 5, 15, 30, 60, 120, 240, 360, 480]:  # Note: 12H, 1D, 3D, 1W, 1M are also recognized
-
+        if tf in map_tf.keys():  # Note: 12H, 1D, 3D, 1W, 1M are also recognized
             # Fetching data from Binance if it matches the eligible timeframe, as it will be faster
             df = Helper.into_dataframe(
                 self.client.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time))
             df.drop(df.tail(1).index, inplace=True)
-
         else:
             # If it doesn't match Binance available timeframes, it must be transformed after fetching 1m data.
             df = self.get_necessary_data(symbol, tf, max_candles_needed)
             df = self.loader._timeframe_setter(df, tf)
 
         # Adding Datetime column for readability of the timestamp. Also more formatting done
-        df['Datetime'] = [datetime.fromtimestamp(i / 1000) for i in df.index]
+        df['Datetime'] = Helper.millisecond_timestamp_to_datetime(df.index)
         df = df[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
         df[["Open", "High", "Low", "Close", "Volume"]] = df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
 
         self.df = df
+        self.symbol = symbol
 
         return f"Symbol changed to {self.symbol}"
 
-    def make_row(self, high=[], low=[], volume=[], count: int = 0, open_price: float = None,
-                 open_date: str = None) -> (pd.DataFrame, list, list, list, list, list):
-        """
-        Helper function used to update the last row of a dataframe, using all of the data in the previous "last row" as input.
-        This is used to update the price of the candlestick live, with the incomplete current candle constantly updating.
+    def get_current_tf_candle(self, tf):
+        minute_candles = self.loader._get_binance_futures_candles("BTCUSDT", tf)
+        minute_candles['Datetime'] = Helper.millisecond_timestamp_to_datetime(minute_candles.index)
+        minute_candles = minute_candles[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
 
-        Parameters:
-        -----------
-        high:       list        Ex. [23348, 23350, 23335, 23330, 23339]
-        low:        list        Ex. [23300, 23345, 23335, 23320, 23300]
-        volume:     list        Ex. [47, 31, 110, 117, 2, 55]
-        count:      int         Ex. 1,2,3
-        open_price: float       Ex. 23342
-        open_date:  str         Ex. "2020-08-04 17:33:02"
-
-        Returns tuple -> (pd.DataFrame, list, list, list, list, list)
-        """
-        # row variable gets a pd.DataFrame of size 1.
-        row = self.loader._get_binance_futures_candles("BTCUSDT", 1).reset_index()
-        timestamp = row.loc[0, "Timestamp"]
-        close = float(row.loc[0, "Close"])
-        high.append(float(row.loc[0, "High"]))
-        low.append(float(row.loc[0, "Low"]))
-        volume.append(float(row.loc[0, "Volume"]))
-
-        # Initial values of a candle that only get set on the first iteration.
-        if count == 0:
-            open_price = row.loc[0, "Open"]
-            open_date = timestamp
-
-        # Adding to previous candlestick data of the last row by updating the row.
-        dfrow = pd.DataFrame([[open_date, datetime.fromtimestamp(open_date / 1000), open_price, max(high), min(low),
-                               close, sum(volume)]],
-                             columns=["Timestamp", "Datetime", "Open", "High", "Low", "Close", "Volume"])
-
-        dfrow[["Open", "High", "Low", "Close", "Volume"]] = dfrow[["Open", "High", "Low", "Close", "Volume"]].astype(
-            float)
-        dfrow = dfrow.set_index("Timestamp")
-
-        return dfrow, high, low, volume, open_price, open_date
+        tf_candle = self.loader._timeframe_setter(minute_candles, tf, drop_last_row=False)
+        return tf_candle
 
     def load__existing_asset(self, df: pd.DataFrame) -> pd.DataFrame:
         """Sets the trading data to an already existing dataframe, passed in as an argument"""
         self.df = df
         return self.df
+
+    def check_rule_1(self, client, strategy, executor, position_amount):
+        if strategy.rule_1_buy_enter(-1) and position_amount == 0:
+            trade_info = executor.enter_market(client, self.symbol, "BUY", self.capital, self.leverage, 1)
+        elif strategy.rule_1_buy_exit(-1) and position_amount > 0:
+            trade_info = executor.exit_market(client, self.symbol, 1, position_amount)
+        elif strategy.rule_1_short_enter(-1) and position_amount == 0:
+            trade_info = executor.enter_market(client, self.symbol, "SELL", self.capital, self.leverage, 1)
+        elif strategy.rule_1_short_exit(-1) and position_amount < 0:
+            trade_info = executor.exit_market(client, self.symbol, 1, position_amount)
+
+    def check_rule_2(self, client, strategy, executor, sensitivity, position_amount):
+        if strategy.rule_2_buy_enter(-1, sensitivity) and position_amount == 0:
+            trade_info = executor.enter_market(client, self.symbol, "BUY", self.capital, self.leverage, 2)
+        elif strategy.rule_2_short_enter(-1, sensitivity) and position_amount == 0:
+            trade_info = executor.enter_market(client, self.symbol, "SELL", self.capital, self.leverage, 2)
+        elif strategy.rule_2_short_stop(-1) and position_amount < 0 and \
+                executor.live_trade_history.last_trade().rule == 2:
+            trade_info = executor.exit_market(client, self.symbol, 2, position_amount)
+        elif strategy.rule_2_buy_stop(-1) and position_amount > 0 and \
+                executor.live_trade_history.last_trade().rule == 2:
+            trade_info = executor.exit_market(client, self.symbol, 2, position_amount)
+
+    def check_rule_3(self, client, strategy, executor, position_amount):
+        if strategy.rule_3_buy_enter(-1) and position_amount == 0:
+            trade_info = executor.enter_market(client, self.symbol, "BUY", self.capital, self.leverage, 3)
+        elif strategy.rule_1_buy_exit(-1) and position_amount > 0:
+            trade_info = executor.exit_market(client, self.symbol, 1, position_amount)
+        elif strategy.rule_3_short_enter(-1) and position_amount == 0:
+            trade_info = executor.enter_market(client, self.symbol, "SELL", self.capital, self.leverage, 3)
+        elif strategy.rule_1_short_exit(-1) and position_amount < 0:
+            trade_info = executor.exit_market(client, self.symbol, 1, position_amount)
+
 
     def start_trading(self, strategy: FabStrategy, executor, tf: int,  sensitivity=0, debug=False) -> str:
         """
@@ -243,81 +238,39 @@ class Trader():
 
         Returns None.
         """
-        count, open_price = 0, 0
-        open_date = None
-        high, low, volume = [], [], []
-
-        # Loading data into strategy, and creating moving averages.
+        client = self.client
         strategy.load_data(self.df)
-        strategy.create_objects()
+        strategy.update_moving_averages()
 
-        # Checking to see whether trading is on or off. If it is off then it will not enter while loop.
-        self.check_status()
+        self.check_on_switch()
 
         while self.start != False:
-            diff = Helper.calculate_minute_disparity(self.df, tf)
-            if round(time.time() % 60, 1) == 0 and diff <= tf:
+            # getting minute candle disparity from real time data
+            minute_disparity = Helper.calculate_minute_disparity(self.df, tf)
 
-                # Getting the most up-to-date row of the <tf>-min candlestick
-                dfrow, high, low, volume, open_price, open_date = self.make_row(high, low, volume, count, open_price,
-                                                                                open_date)
-
-                if debug == True:
-                    print(dfrow)
-                    print(f"{tf - diff} minutes left")
-
-                # Updating moving averages
-                strategy.load_data(self.df.append(dfrow))
-                strategy.create_objects()
+            if Helper.change_in_clock_minute() and minute_disparity <= tf:
+                df_row = self.get_current_tf_candle(minute_disparity)
+                position_amount = self.get_position_amount(self.symbol)
+                strategy.load_data(self.df.append(df_row))
+                strategy.update_moving_averages()
 
                 # Checking only Rule 2, because it needs a minute by minute check.
-                # Second condition is making sure that there is no existing position
-                if strategy.rule_2_buy_enter(-1, sensitivity) and self.get_position(self.symbol) == 0:
-                    trade_info = executor.enter_market(self.symbol, "BUY", 2)
-                elif strategy.rule_2_short_enter(-1, sensitivity) and self.get_position(self.symbol) == 0:
-                    trade_info = executor.enter_market(self.symbol, "SELL", 2)
+                self.check_rule_2(client, strategy, executor, sensitivity, position_amount)
 
-                # Saves CPU usage, waits 5 seconds before the next minute
                 time.sleep(50)
 
-                count += 1
-
-            elif diff > tf:
-                # Updating data using Binance API instead of appending the completed final row from the while loop
-                self._update_data(math.floor(diff), "BTCUSDT")
-
-                # Updating Moving averages
+            elif minute_disparity > tf:
+                # Updating data using Binance API instead of appending the completed final row from the above code
+                self._update_data(math.floor(minute_disparity), self.symbol)
+                position_amount = self.get_position_amount(self.symbol)
                 strategy.load_data(self.df)
-                strategy.create_objects()
+                strategy.update_moving_averages()
 
-                # Checks for the rest of the rules
-                if strategy.rule_2_short_stop(-1) and self.get_position(self.symbol) < 0 and \
-                        executor.live_trade_history.last_trade().rule == 2:
-                    trade_info = executor.exit_market(self.symbol, 2, self.get_position(self.symbol))
-                elif strategy.rule_2_buy_stop(-1) and self.get_position(self.symbol) > 0 and \
-                        executor.live_trade_history.last_trade().rule == 2:
-                    trade_info = executor.exit_market(self.symbol, 2, self.get_position(self.symbol))
-                elif strategy.rule_1_buy_enter(-1) and self.get_position(self.symbol) == 0:
-                    trade_info = executor.enter_market(self.symbol, "BUY", 1)
-                elif strategy.rule_1_buy_exit(-1) and self.get_position(self.symbol) > 0:
-                    trade_info = executor.exit_market(self.symbol, 1, self.get_position(self.symbol))
-                elif strategy.rule_1_short_enter(-1) and self.get_position(self.symbol) == 0:
-                    trade_info = executor.enter_market(self.symbol, "SELL", 1)
-                elif strategy.rule_1_short_exit(-1) and self.get_position(self.symbol) < 0:
-                    trade_info = executor.exit_market(self.symbol, 1, self.get_position(self.symbol))
-                elif strategy.rule_3_buy_enter(-1) and self.get_position(self.symbol) == 0:
-                    trade_info = executor.enter_market(self.symbol, "BUY", 3)
-                elif strategy.rule_3_short_enter(-1) and self.get_position(self.symbol) == 0:
-                    trade_info = executor.enter_market(self.symbol, "SELL", 3)
+                self.check_rule_1(client, strategy, executor, position_amount)
+                self.check_rule_3(client, strategy, executor, position_amount)
 
-                    # Resetting candlesticks
-                high, low, volume = [], [], []
-                count = 0
                 time.sleep(1)
 
-                if debug == True:
-                    print(diff)
-                    print("next")
-            self.check_status()
+            self.check_on_switch()
 
         return "Trading Stopped"
