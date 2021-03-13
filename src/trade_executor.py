@@ -1,12 +1,12 @@
-from trader import Trader
 from helper import Helper
+from dataloader import _DataLoader
 from datetime import datetime
 from trade import Trade
 import pandas as pd
 from trading_history import TradeHistory
 
 
-class TradeExecutor(Trader):
+class TradeExecutor:
     """
     Responsible for the execution of trades on the binance Exchange. The parent class Trader analyzes whether to trade or not.
 
@@ -31,18 +31,18 @@ class TradeExecutor(Trader):
     """
 
     def __init__(self):
-        super().__init__()
         self.live_trade_history = TradeHistory()
         self.trade_journal = pd.DataFrame()
-        self.account = self.load_account()
         self.latest_trade_info = None
         self.latest_trade = None
+        self.loader = _DataLoader()
 
-    def how_much_to_buy(self, current_balance, leverage, last_price: str) -> float:
+    @staticmethod
+    def how_much_to_buy(current_balance, leverage, last_price: str) -> float:
         """Formula that calculates the position size"""
-        return round(Helper.sig_fig(current_balance*leverage / float(last_price), 4), 3)
+        return round(Helper.sig_fig(current_balance * leverage / float(last_price), 4), 3)
 
-    def enter_market(self, symbol: str, side: str, rule_no: int) -> list:
+    def enter_market(self, client, symbol: str, side: str, capital, leverage, rule_no: int) -> list:
         """
         Creates a order in the exchange, given the symbol
 
@@ -76,21 +76,20 @@ class TradeExecutor(Trader):
                  'time': 1609197914670,
                  'updateTime': 1609197914825}
         """
-        minutes = 2
-        last_price = self.loader._get_binance_futures_candles("BTCUSDT", minutes).iloc[-1, 3]
+        last_price = self.loader._get_binance_futures_candles("BTCUSDT", 2).iloc[-1, 3]
         #         assert self.how_much_to_buy(last_price) <= self.capital*leverage/last_price + 1
 
-        enterMarketParams = {
+        enter_market_params = {
             'symbol': symbol,
             'side': side,
             'type': 'MARKET',
             # Note the varaibles here self.captial and self.leverage originate from Trader class
-            'quantity': self.how_much_to_buy(self.capital, self.leverage, last_price )
+            'quantity': self.how_much_to_buy(capital, leverage, last_price)
         }
 
         # Creating order to the exchange
-        self.latest_trade = self.client.futures_create_order(**enterMarketParams)
-        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
+        self.latest_trade = client.futures_create_order(**enter_market_params)
+        self.latest_trade_info = client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
 
         # Getting Datetime of trade
         date = str(datetime.fromtimestamp(self.latest_trade_info['time'] / 1000))[:19]
@@ -107,7 +106,7 @@ class TradeExecutor(Trader):
 
         return self.latest_trade_info
 
-    def exit_market(self, symbol: str, rule_no: int, position_amount: float) -> list:
+    def exit_market(self, client, symbol: str, rule_no: int, position_amount: float) -> list:
         """
         Considers the current position you have for a given symbol, and closes it accordingly
 
@@ -129,8 +128,8 @@ class TradeExecutor(Trader):
         }
 
         # Creating order to the exchange
-        self.latest_trade = self.client.futures_create_order(**exitMarketParams)
-        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
+        self.latest_trade = client.futures_create_order(**exitMarketParams)
+        self.latest_trade_info = client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
 
         # Getting the date of the trade
         date = str(datetime.fromtimestamp(self.latest_trade_info['time'] / 1000))[:19]
@@ -147,7 +146,7 @@ class TradeExecutor(Trader):
 
         return self.latest_trade_info
 
-    def stop_market(self, symbol: str, price: float, position_amount: float) -> list:
+    def stop_market(self, client, symbol: str, price: float, position_amount: float) -> list:
         """
         Sets a stop loss (at market) at a given price for a given symbol
 
@@ -172,12 +171,12 @@ class TradeExecutor(Trader):
         }
 
         # Creating order to the exchange
-        self.latest_trade = self.client.futures_create_order(**stopMarketParams)
-        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
+        self.latest_trade = client.futures_create_order(**stopMarketParams)
+        self.latest_trade_info = client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
 
         return self.latest_trade_info
 
-    def enter_limit(self, symbol: str, side: str, price: float, leverage: float) -> list:
+    def enter_limit(self, client, symbol: str, side: str, price: float, capital, leverage: float) -> list:
         """
         Sets a limit order at a given price for a given symbol
 
@@ -191,21 +190,23 @@ class TradeExecutor(Trader):
         Returns: dict     Ex. see "enter_market" desc
 
         """
+        last_price = self.loader._get_binance_futures_candles("BTCUSDT", 2).iloc[-1, 3]
+
         enterLimitParams = {
             'symbol': symbol,
             'side': side,
             'type': "LIMIT",
             'price': price,
             'timeInForce': "GTC",
-            'quantity': round(Helper.sig_fig(self.capital * leverage / (last_price), 4), 3)
+            'quantity': self.how_much_to_buy(capital, leverage, last_price)
         }
 
-        self.latest_trade = self.client.futures_create_order(**enterLimitParams)
-        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
+        self.latest_trade = client.futures_create_order(**enterLimitParams)
+        self.latest_trade_info = client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
 
         return self.latest_trade_info
 
-    def exit_limit(self, symbol: str, price: float, position_amount: float) -> list:
+    def exit_limit(self, client, symbol: str, price: float, position_amount: float) -> list:
         """
         Considers the current position you have for a given symbol, and closes it given a price.
 
@@ -229,7 +230,7 @@ class TradeExecutor(Trader):
             'quantity': abs(position_amount)
         }
         # Creating order to the exchange
-        self.latest_trade = self.client.futures_create_order(**exitLimitParams)
-        self.latest_trade_info = self.client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
+        self.latest_trade = client.futures_create_order(**exitLimitParams)
+        self.latest_trade_info = client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
 
         return self.latest_trade_info
