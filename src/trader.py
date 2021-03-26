@@ -143,9 +143,9 @@ class Trader():
         Returns float
             Ex. If a 1.000 BTC position is open, it will return 1.0
         """
-        for i in self.client.futures_position_information():
-            if i['symbol'] == symbol:
-                return float(i["positionAmt"])
+        for coin_futures_info in self.client.futures_position_information():
+            if coin_futures_info['symbol'] == symbol:
+                return float(coin_futures_info["positionAmt"])
         return None
 
     def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 231) -> str:

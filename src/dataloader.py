@@ -33,7 +33,7 @@ class _DataLoader:
         # Reading CSV File containing 1 min candlestick data
         data = pd.read_csv(csv_url, index_col='Timestamp')
         # Converting Timestamp numbers into a new column of readable dates
-        data['Datetime'] = [datetime.fromtimestamp(i) for i in data.index]
+        data['Datetime'] = [datetime.fromtimestamp(timestamp) for timestamp in data.index]
         data[["Open", "High", "Low", "Close", "Volume"]] = data[["Open", "High", "Low", "Close", "Volume"]].astype(
             float)
         data = data[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']]

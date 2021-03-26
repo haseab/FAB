@@ -49,7 +49,7 @@ class Helper:
 
     @staticmethod
     def millisecond_timestamp_to_datetime(timestamp_list):
-        return [datetime.fromtimestamp(i / 1000) for i in timestamp_list]
+        return [datetime.fromtimestamp(second_timestamp / 1000) for second_timestamp in timestamp_list]
 
     @staticmethod
     def calculate_minute_disparity(df: pd.DataFrame, tf: int) -> float:
@@ -74,5 +74,5 @@ class Helper:
         ranges = np.ceil(np.linspace(0, tf * 235, num=split_number))
 
         # Converting all indices into integers and reversing the list
-        ranges = [int(i) for i in ranges[::-1]]
+        ranges = [int(index) for index in ranges[::-1]]
         return ranges

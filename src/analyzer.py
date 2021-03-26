@@ -67,10 +67,10 @@ class Analyzer:
         return gross_loss ** (1 / num_trades_lost) if num_trades_lost != 0 else 1
 
     def get_num_trades_won(self, trades):
-        return len([i for i in trades if i > 1])
+        return len([trade for trade in trades if trade > 1])
 
     def get_num_trades_lost(self, trades):
-        return len([i for i in trades if i <= 1])
+        return len([trade for trade in trades if trade <= 1])
 
     def get_longest_run(self, trades):
         return self.calculate_longest_run(trades)[0]
@@ -86,22 +86,22 @@ class Analyzer:
 
     def get_pnl(self, trades):
         sums = 1
-        for i in trades:
-            sums *= i
+        for trade in trades:
+            sums *= trade
         return sums
 
     def get_gross_profit(self, trades):
         sums = 1
-        for i in trades:
-            if i > 1:
-                sums *= i
+        for trade in trades:
+            if trade > 1:
+                sums *= trade
         return sums
 
     def get_gross_loss(self, trades):
         sums = 1
-        for i in trades:
-            if i < 1:
-                sums *= i
+        for trade in trades:
+            if trade < 1:
+                sums *= trade
         return sums
 
     def calculate_short_profitability(self, enter_price, exit_price, commission):
