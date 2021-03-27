@@ -1,5 +1,5 @@
 
-class Exceptions():
+class Exceptions:
     @staticmethod
     def check_trade_status_exists(trade):
         if trade.status != "Enter":
@@ -8,5 +8,5 @@ class Exceptions():
     @staticmethod
     def check_empty_trade_history(trade_history):
         if trade_history == [['List of Trades']]:
-            return "Not enough data to provide statistics"
+            raise Exception("Not enough data to provide statistics")
 
