@@ -119,6 +119,43 @@ class Backtester:
 
         return compiled_list
 
+    def check_rule_1(self, strategy, i, list_of_str_dates):
+        if strategy.rule_1_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
+            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
+
+        elif strategy.rule_1_buy_exit(i) and self.trade_history.last_trade().side == "Long" \
+                and self.trade_history.last_trade().status == "Enter":
+            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
+
+        elif strategy.rule_1_short_enter(i) and self.trade_history.last_trade().status != "Enter":
+            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
+
+        elif strategy.rule_1_short_exit(i) and self.trade_history.last_trade().side == "Short" \
+                and self.trade_history.last_trade().status == "Enter":
+            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
+
+    def check_rule_2(self, strategy, i, list_of_str_dates, sensitivity):
+        if strategy.rule_2_buy_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
+            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.black[i], "Rule 2"]))
+
+        elif strategy.rule_2_buy_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
+                self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
+            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 2"]))
+
+        elif strategy.rule_2_short_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
+            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.black[i], "Rule 2"]))
+
+        elif strategy.rule_2_short_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
+                self.trade_history.last_trade().side == "Short" and self.trade_history.last_trade().status == "Enter":
+            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 2"]))
+
+    def check_rule_3(self, strategy, i, list_of_str_dates):
+        if strategy.rule_3_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
+            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 3"]))
+
+        elif strategy.rule_3_short_enter(i) and self.trade_history.last_trade().status != "Enter":
+            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 3"]))
+
     def start_backtest(self, df: pd.DataFrame, strategy: FabStrategy, sensitivity: float) -> str:
         """
         Tests the asset in history, with respect to the rules outlined in the FabStrategy class.
@@ -143,42 +180,10 @@ class Backtester:
         strategy.update_moving_averages()
 
         # Iterating through every single data point and checking if rules apply.
-        for i in range(231, len(df) - 1):
-
-            # Second condition ensures you aren't doubled entering
-            if strategy.rule_1_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
-
-            # Second condition ensures that the previous trade was entering so that it can exit.
-            elif strategy.rule_1_buy_exit(i) and self.trade_history.last_trade().side == "Long" \
-                    and self.trade_history.last_trade().status == "Enter":
-                self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
-
-            elif strategy.rule_1_short_enter(i) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
-
-            elif strategy.rule_1_short_exit(i) and self.trade_history.last_trade().side == "Short" \
-                    and self.trade_history.last_trade().status == "Enter":
-                self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
-
-            elif strategy.rule_2_buy_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.black[i], "Rule 2"]))
-
-            elif strategy.rule_2_buy_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
-                    self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
-                self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 2"]))
-
-            elif strategy.rule_2_short_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.black[i], "Rule 2"]))
-            elif strategy.rule_2_short_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
-                    self.trade_history.last_trade().side == "Short" and self.trade_history.last_trade().status == "Enter":
-                self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 2"]))
-
-            elif strategy.rule_3_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 3"]))
-
-            elif strategy.rule_3_short_enter(i) and self.trade_history.last_trade().status != "Enter":
-                self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 3"]))
+        for row_index in range(231, len(df) - 1):
+            self.check_rule_1(strategy, row_index, list_of_str_dates)
+            self.check_rule_2(strategy, row_index, list_of_str_dates, sensitivity)
+            self.check_rule_3(strategy, row_index, list_of_str_dates)
 
         # Analyzing the trade history
         analyze_backtest = Analyzer()
