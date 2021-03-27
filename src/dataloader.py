@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 from binance.client import Client
 from helper import Helper
+import sqlalchemy
 
 
 class _DataLoader:
@@ -26,6 +27,8 @@ class _DataLoader:
 
     def __init__(self):
         self.client = Client()
+        with open("fab_engine.txt", 'r') as file:
+            self.engine = sqlalchemy.create_engine(file.readline())
 
     def _load_csv(self, csv_url: str) -> pd.DataFrame:
         """Function used to load 1-minute historical candlestick data with a given csv url
