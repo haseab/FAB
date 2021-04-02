@@ -7,8 +7,6 @@ from trader import Trader
 class Screener():
 
     def __init__(self):
-        self.backtester = Backtester()
-        self.trader = Trader()
         self.engine = sqlalchemy.create_engine('mysql+pymysql://root:***REMOVED***@localhost:3306/sample')
 
     def check_for_signals(self, df, strategy):

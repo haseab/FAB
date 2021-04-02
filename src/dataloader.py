@@ -4,7 +4,8 @@ from datetime import datetime
 from binance.client import Client
 from helper import Helper
 import sqlalchemy
-
+import json
+from sql_mapper import SqlMapper
 
 class _DataLoader:
     """
@@ -27,19 +28,37 @@ class _DataLoader:
 
     def __init__(self):
         self.client = Client()
-        with open("fab_engine.txt", 'r') as file:
-            self.engine = sqlalchemy.create_engine(file.readline())
+        self.sql = SqlMapper()
+        self.conn = self.sql.connect_psql()
+        # with open("fab_engine.txt", 'r') as file:
+        #     self.engine = sqlalchemy.create_engine(file.readline())
+
+    def _load_csv_v2(self, csv_url):
+        tf = csv_url.split(' ')[2][:-1]
+        symbol = csv_url.split(' ')[1]
+
+        data = pd.read_csv(csv_url)
+        data['timestamp'] = [int(timestamp/1000) for timestamp in data['timestamp']]
+        data['date'] = [datetime.fromtimestamp(timestamp) for timestamp in data['timestamp'].values]
+        data['timeframe'] = [tf]*len(data)
+        data['symbol'] = [symbol]*len(data)
+
+        data[["open", "high", "low", "close", "volume"]] = data[["open", "high", "low", "close", "volume"]].astype(
+            float)
+
+        data = data[['symbol', 'timeframe', 'timestamp', 'date', 'open', 'high', 'low', 'close', 'volume']]
+        return data.set_index(["symbol", "timeframe", "timestamp"])
 
     def _load_csv(self, csv_url: str) -> pd.DataFrame:
         """Function used to load 1-minute historical candlestick data with a given csv url
             The important columns are the ones that create the candlestick (open, high, low, close) """
         # Reading CSV File containing 1 min candlestick data
-        data = pd.read_csv(csv_url, index_col='Timestamp')
+        data = pd.read_csv(csv_url, index_col='timestamp')
         # Converting Timestamp numbers into a new column of readable dates
-        data['Datetime'] = [datetime.fromtimestamp(timestamp) for timestamp in data.index]
-        data[["Open", "High", "Low", "Close", "Volume"]] = data[["Open", "High", "Low", "Close", "Volume"]].astype(
+        data['date'] = [datetime.fromtimestamp(timestamp) for timestamp in data.index]
+        data[["open", "high", "low", "close", "volume"]] = data[["open", "high", "low", "close", "volume"]].astype(
             float)
-        data = data[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']]
+        data = data[['date', 'open', 'high', 'low', 'close', 'volume']]
         return data
 
     def _get_binance_futures_candles(self, symbol: str, start_minutes_ago: int, end_minutes_ago: int = 0,
@@ -86,7 +105,16 @@ class _DataLoader:
 
         start_date = Helper.string_to_timestamp(start_date)
         end_date = Helper.string_to_timestamp(end_date)
-        return dataframe.loc[start_date:end_date]
+
+        # Converting from timestamp index to numbered index, then adding numbered index as column
+        dataframe_temp = dataframe.reset_index().reset_index().set_index('timestamp')
+        start_index = dataframe_temp.loc[start_date, 'index']
+        try:
+            end_index = dataframe_temp.loc[end_date, 'index']
+        except KeyError:
+            end_index = dataframe_temp['index'].iloc[-1]
+
+        return dataframe[start_index:end_index+1]
 
     def _timeframe_setter(self, dataframe: pd.DataFrame, tf: int, shift: int = 0, drop_last_row=True) -> pd.DataFrame:
         """ Vertical way of abstracting data
@@ -98,25 +126,25 @@ class _DataLoader:
         tf: The combination of 1-min candles into one value. Number of 1-min candles combined
                 is the timeframe value itself.
                 The raw data is in a 1-min timeframe. Dataframe contains the following
-                columns: ['Open', 'High', 'Low, 'Close']. Converting to a X minute timeframe is
+                columns: ['open', 'high', 'Low, 'close']. Converting to a X minute timeframe is
                 handled differently for every column of the candlestick:
 
             Close - Since all that matters is the close value every 'tf' minutes, you can skip
                 every 'tf' minutes.
                 Ex.
-                    df['Close'] = pd.Series([4.50, 4.60, 4.65, 4.44, 4.21, 4.54, 4.10])
-                    _timeframe_setter(df['Close'], 2) -> [4.50, 4.65, 4.21, 4.10]
-                    _timeframe_setter(df['Close'], 3) -> [[4.50, 4.44, 4.10]
+                    df['close'] = pd.Series([4.50, 4.60, 4.65, 4.44, 4.21, 4.54, 4.10])
+                    _timeframe_setter(df['close'], 2) -> [4.50, 4.65, 4.21, 4.10]
+                    _timeframe_setter(df['close'], 3) -> [[4.50, 4.44, 4.10]
 
             Open - Same rules as Close
 
             High - Get the maximum 1-min high value given the range of the timeframe
                  Ex.
-                     df['Close'] = pd.Series([4.50, 4.60, 4.65, 4.44, 4.21, 4.54, 4.10])
-                    _timeframe_setter(df['High'], 2) ->  [4.60, 4.65, 4.44, 4.54]
-                    _timeframe_setter(df['High'], 3) ->  [4.65, 4.54]
+                     df['close'] = pd.Series([4.50, 4.60, 4.65, 4.44, 4.21, 4.54, 4.10])
+                    _timeframe_setter(df['high'], 2) ->  [4.60, 4.65, 4.44, 4.54]
+                    _timeframe_setter(df['high'], 3) ->  [4.65, 4.54]
 
-            Low - Same rules as 'High', but instead the minimum of that range
+            Low - Same rules as 'high', but instead the minimum of that range
 
             Volume - Same rules as "High", but instead the sum of that range
 
@@ -129,50 +157,49 @@ class _DataLoader:
             # This is making sure that there it shifts so that the last tf candle includes the last 1-minute candle
             shift = tf - len(dataframe) % tf - 1
 
-        dataframe[["Open", "High", "Low", "Close", "Volume"]] = dataframe[
-            ["Open", "High", "Low", "Close", "Volume"]].astype(float)
+        dataframe[["open", "high", "low", "close", "volume"]] = dataframe[
+            ["open", "high", "low", "close", "volume"]].astype(float)
 
         # Creating a new dataframe so that the size of the rows of the new dataframe will be the same as the new columns
         df = dataframe.iloc[shift::tf].copy()
 
         # Iterating through candle data, and abstracting based on the highest, lowest and sum respectively.
-        df['High'] = [max(dataframe['High'][i:tf + i]) for i in range(shift, len(dataframe['High']), tf)]
-        df['Low'] = [min(dataframe['Low'][i:tf + i]) for i in range(shift, len(dataframe['Low']), tf)]
-        df['Volume'] = [sum(dataframe['Volume'][i:tf + i]) for i in range(shift, len(dataframe['Volume']), tf)]
+        df['high'] = [max(dataframe['high'][i:tf + i]) for i in range(shift, len(dataframe['high']), tf)]
+        df['low'] = [min(dataframe['low'][i:tf + i]) for i in range(shift, len(dataframe['low']), tf)]
+        df['volume'] = [sum(dataframe['volume'][i:tf + i]) for i in range(shift, len(dataframe['volume']), tf)]
+
+        df['timeframe'] = [tf]*len(df['volume'])
 
         # Selecting every nth value in the list, where n is the timeframe
-        df['Close'] = [dataframe['Close'].iloc[i:tf + i].iloc[-1] for i in range(shift, len(dataframe['Close']), tf)]
+        df['close'] = [dataframe['close'].iloc[i:tf + i].iloc[-1] for i in range(shift, len(dataframe['close']), tf)]
 
         # Dropping the last value, this gets rid of the candle that isn't complete until the end of the tf
         if drop_last_row:
             df.drop(df.tail(1).index, inplace=True)
 
-        return df
+        return df.set_index(['symbol', 'timeframe', 'timestamp'])
 
-    def _timeframe_setter_v2(self, df_raw: pd.DataFrame, tf: int, shift: int = None) -> pd.DataFrame:
-        """
-        WORK IN PROGRESS - Horizontal way of abstracting the data
+    def get_all_binance_data(self, symbol, start_date, end_date=None, tf='1m'):
+        list_symbol = self.client.get_historical_klines(symbol=symbol, interval=tf, start_str=start_date)
+        df_symbol = pd.DataFrame(list_symbol)
+        df_symbol.columns = ["timestamp", "open", "high", "low", "close", "volume", "timestamp_end", "", "", "", "", ""]
 
-        This way of abstracting data actually takes longer and more time, however it allows for
-        complex cases in which not all data needs to have the same timeframe.
+        ##Fixing Columns
+        df_symbol['timestamp'] = [int(timestamp / 1000) for timestamp in df_symbol['timestamp']]
+        df_symbol['date'] = [datetime.fromtimestamp(timestamp) for timestamp in df_symbol['timestamp'].values]
+        df_symbol['timeframe'] = [tf[:-1]] * len(df_symbol)
+        df_symbol['symbol'] = [symbol] * len(df_symbol)
 
-        """
+        df_symbol[["open", "high", "low", "close", "volume"]] = df_symbol[
+            ["open", "high", "low", "close", "volume"]].astype(
+            float)
+        df_symbol = df_symbol[['symbol', 'timeframe', 'timestamp', 'date', 'open', 'high', 'low', 'close', 'volume']]
+        df_symbol = df_symbol.set_index(["symbol", "timeframe", "timestamp"])
 
-        if shift == None:
-            # This is making sure that there it shifts so that the last tf candle includes the last 1-minute candle
-            shift = tf - len(df_raw) % tf - 1
+        start_date = str(df_symbol.iloc[0, 0])[:10]
 
-        tf = 77
-        count = 0
-        low, high = shift, shift + tf
-        df2 = df_raw.copy().head(0)
-        hi_df = df_raw.loc[:, "High"]
-        lo_df = df_raw.loc[:, "Low"]
-        while count < 1000:
-            df2 = df2.append({"Datetime": df_raw.iloc[0, 0], "Open": df_raw.iloc[0, 1], "High": max(hi_df[low:high]),
-                              "Low": min(lo_df[low:high]), "Close": df_raw.iloc[-1, 4]}, ignore_index=True)
-            low += 77
-            high += 77
-            count += 1
+        string = f"Binance {symbol} {tf} data from {start_date} to {str(datetime.now())[:10]}.csv"
+        print(string)
+        # df_symbol.to_csv(string)
 
-        return df2
+        return df_symbol
