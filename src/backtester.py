@@ -4,12 +4,12 @@ from analyzer import Analyzer
 from fab_strategy import FabStrategy
 from trading_history import TradeHistory
 from trade import Trade
-from helper import helper
+from helper import Helper
 import pandas as pd
 import os
 
 
-class Backtester:
+class Backtester2:
     """
     Purpose is to test strategy in history to see its performance
 
@@ -43,7 +43,7 @@ class Backtester:
 
     def __init__(self):
         self.loader = _DataLoader()
-        self.range_data = None
+        self.date_range = None
         self.symbol_data = None
         self.start = None
         self.end = datetime.today().strftime('%Y-%m-%d')
@@ -54,33 +54,25 @@ class Backtester:
         self.trades = None
         self.summary = "Nothing to Show Yet"
 
-    def set_asset(self, symbol: str) -> pd.DataFrame:
-        """Asset to be backtesting"""
-        lookup = {"BTCUSDT": os.path.dirname(
-            os.path.dirname(os.path.abspath("__file__"))) + r"\data\Binance BTCUSDT 2017-08-17 to 2021-03-30.csv"}
+    def value_exists_in_database(self, column, value, table_name = "candlesticks") -> bool:
+        cursor = self.loader.conn.cursor()
+        df = self.loader.sql.SELECT(f"CAST(CASE WHEN COUNT(DISTINCT({column}))> 0 THEN 1 ELSE 0 END AS BIT) from "
+                                    f"{table_name} where {column} = '{value}' ;", cursor)
+        return bool(int(df.iloc[0, 0]))
 
-        # Set CSV Url or connect to DB
-        self.symbol_data = self.loader._load_csv(lookup[symbol])
-        return self.symbol_data
-
-    def set_date_range(self, start: str, end: str = None) -> None:
+    def set_symbol(self, symbol: str) -> str:
         """
-        The data will be sliced such that the respective date range is returned from the dataframe.
-        The data is also abstracted by the timframe_setter() method.
+        Parameters
+        ----------
+        symbol: ticker symbol (e.g. BTCUSDT, ETHUSDT, TSLA)
 
-        Paramters:
-        ------------
-        start: str - start date
-        end:   str - end date
-
-        :return None
+        :return timeframe
         """
-        self.start = start
-        if end != None:
-            self.end = end
-        self.range_data = self.loader._get_range(self.symbol_data, self.start, self.end)
-        self.tf_data = self.loader._timeframe_setter(self.range_data, self.tf)
-        return
+        if not self.value_exists_in_database("symbol", symbol):
+            raise Exception("Symbol requested is not in the database yet")
+
+        self.symbol = symbol
+        return self.symbol
 
     def set_timeframe(self, tf: int) -> int:
         """
@@ -90,8 +82,39 @@ class Backtester:
 
         :return timeframe
         """
+        #
+        # if not self.value_exists_in_database("timeframe", tf):
+        #     raise Exception("Timeframe requested is not in the database yet")
+
         self.tf = tf
         return self.tf
+
+    def set_date_range(self, start_date: str, end_date: str = None) -> (str, str):
+        """
+        Paramters:
+        ------------
+        start: str - start date (in format "YYYY-MM-DD")
+        end:   str - end date   (in format "YYYY-MM-DD")
+
+        :return (str, str)
+        """
+        self.start_date = start_date
+        self.end_date = end_date
+        return self.start_date, self.end_date
+
+    def load_backtesting_data(self, symbol=None, tf=None, start_date=None, end_date=None, table_name="candlesticks"):
+        cursor = self.loader.sql.conn.cursor()
+        symbol = self.symbol if not symbol else symbol
+        start_date = self.start_date if not start_date else start_date
+        end_date = self.end_date if not end_date else end_date
+
+        df = self.loader.sql.SELECT(f"* FROM {table_name} WHERE SYMBOL = '{symbol}' AND TIMEFRAME = '1' AND DATE "
+                                    f"BETWEEN '{start_date}' AND '{end_date}' ORDER BY timestamp", cursor)
+        df = df.drop('id', axis=1)
+        df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(
+            float)
+        self.df = df
+        return self.df
 
     def validate_trades(self, trade_index: [float], trade_history: TradeHistory) -> [[[]]]:
         """ Puts the already given information in a way that is easily debuggable
@@ -153,7 +176,7 @@ class Backtester:
         elif strategy.rule_3_short_enter(i) and self.trade_history.last_trade().status != "Enter":
             self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 3"]))
 
-    def start_backtest(self, df: pd.DataFrame, strategy: FabStrategy, sensitivity: float) -> str:
+    def start_backtest(self, df: pd.DataFrame=None, strategy: FabStrategy=None, sensitivity: float=0.001) -> str:
         """
         Tests the asset in history, with respect to the rules outlined in the FabStrategy class.
         It adds applicable trades to a list and then an Analyzer object summarizes the profitability
@@ -167,6 +190,15 @@ class Backtester:
 
         :return str - A summary of all metrics in the backtest. (See Analyzer.summarize_statistics method for more info)
         """
+
+        if df is None:
+            self.df_tf = self.loader._timeframe_setter(self.df, self.tf)
+            df = self.df_tf
+        else:
+            self.df_tf = self.loader._timeframe_setter(df, self.tf)
+            df = self.df_tf
+
+        strategy = FabStrategy() if not strategy else strategy
 
         self.trade_history = TradeHistory()
 
@@ -192,3 +224,5 @@ class Backtester:
         self.summary = analyze_backtest.summarize_statistics()
 
         return self.summary
+
+
