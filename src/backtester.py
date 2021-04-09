@@ -6,10 +6,11 @@ from trading_history import TradeHistory
 from trade import Trade
 from helper import Helper
 import pandas as pd
+import numpy as np
 import os
 
 
-class Backtester2:
+class Backtester:
     """
     Purpose is to test strategy in history to see its performance
 
@@ -42,12 +43,15 @@ class Backtester2:
     """
 
     def __init__(self):
+        self.analyzer = Analyzer()
         self.loader = _DataLoader()
         self.date_range = None
         self.symbol_data = None
         self.start = None
         self.end = datetime.today().strftime('%Y-%m-%d')
         self.tf = None
+        self.df = None
+        self.df_tf = None
         self.trade_history = TradeHistory()
         self.tf_data = None
         self.pnl = None
@@ -102,19 +106,29 @@ class Backtester2:
         self.end_date = end_date
         return self.start_date, self.end_date
 
-    def load_backtesting_data(self, symbol=None, tf=None, start_date=None, end_date=None, table_name="candlesticks"):
+    def load_backtesting_data(self, symbol=None, start_date=None, end_date=None, table_name="candlesticks", all_data=False):
         cursor = self.loader.sql.conn.cursor()
         symbol = self.symbol if not symbol else symbol
-        start_date = self.start_date if not start_date else start_date
-        end_date = self.end_date if not end_date else end_date
 
-        df = self.loader.sql.SELECT(f"* FROM {table_name} WHERE SYMBOL = '{symbol}' AND TIMEFRAME = '1' AND DATE "
-                                    f"BETWEEN '{start_date}' AND '{end_date}' ORDER BY timestamp", cursor)
-        df = df.drop('id', axis=1)
+        if all_data:
+            df = self.loader.sql.SELECT(f"* FROM {table_name} WHERE SYMBOL = '{symbol}' AND TIMEFRAME = '1' ORDER BY timestamp", cursor)
+
+        else:
+            start_date = self.start_date if not start_date else start_date
+            end_date = self.end_date if not end_date else end_date
+            df = self.loader.sql.SELECT(f"* FROM {table_name} WHERE SYMBOL = '{symbol}' AND TIMEFRAME = '1' AND DATE "
+                                        f"BETWEEN '{start_date}' AND '{end_date}' ORDER BY timestamp", cursor)
+        # df = df.drop('id', axis=1)
+        df['date'] = [np.datetime64(date) for date in df['date'].values]
         df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(
             float)
-        self.df = df
+        self.df = df.set_index('candle_id')
         return self.df
+
+    def load_timeframe_data(self, tf):
+        tf = self.tf if not tf else tf
+        self.df_tf = self.loader._timeframe_setter(self.df, tf)
+        return self.df_tf
 
     def validate_trades(self, trade_index: [float], trade_history: TradeHistory) -> [[[]]]:
         """ Puts the already given information in a way that is easily debuggable
@@ -141,88 +155,83 @@ class Backtester2:
 
     def check_rule_1(self, strategy, i, list_of_str_dates):
         if strategy.rule_1_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
+            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i+1], strategy.price[i], "Rule 1"]))
 
         elif strategy.rule_1_buy_exit(i) and self.trade_history.last_trade().side == "Long" \
                 and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
+            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i+1], strategy.price[i], "Rule 1"]))
 
         elif strategy.rule_1_short_enter(i) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
+            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i+1], strategy.price[i], "Rule 1"]))
 
         elif strategy.rule_1_short_exit(i) and self.trade_history.last_trade().side == "Short" \
                 and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 1"]))
+            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i+1], strategy.price[i], "Rule 1"]))
 
     def check_rule_2(self, strategy, i, list_of_str_dates, sensitivity):
         if strategy.rule_2_buy_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.black[i], "Rule 2"]))
+            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i+1], strategy.black[i], "Rule 2"]))
 
         elif strategy.rule_2_buy_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
                 self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 2"]))
+            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i+1], strategy.price[i], "Rule 2"]))
 
         elif strategy.rule_2_short_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.black[i], "Rule 2"]))
+            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i+1], strategy.black[i], "Rule 2"]))
 
         elif strategy.rule_2_short_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
                 self.trade_history.last_trade().side == "Short" and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 2"]))
+            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i+1], strategy.price[i], "Rule 2"]))
 
     def check_rule_3(self, strategy, i, list_of_str_dates):
         if strategy.rule_3_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 3"]))
+            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i+1], strategy.price[i], "Rule 3"]))
 
         elif strategy.rule_3_short_enter(i) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.price[i], "Rule 3"]))
+            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i+1], strategy.price[i], "Rule 3"]))
 
-    def start_backtest(self, df: pd.DataFrame=None, strategy: FabStrategy=None, sensitivity: float=0.001) -> str:
+    def calculate_trading_history(self, df_tf: pd.DataFrame=None, strategy: FabStrategy=None, sensitivity: float=0.001) -> str:
         """
         Tests the asset in history, with respect to the rules outlined in the FabStrategy class.
         It adds applicable trades to a list and then an Analyzer object summarizes the profitability
 
         Parameters:
         -----------
-        df:          pd.DataFrame - The abstracted tf data that is ready for backtesting. This is not minute data if tf != 1
+        df_tf:       pd.DataFrame - The abstracted tf data that is ready for backtesting. This is not minute data if tf != 1
         strategy:    Object - any trading strategy that takes the index and sensitivity as input, and returns boolean values.
         sensitivity: float  - Allowance between price and MA. The larger the value, the further and less sensitive.
 
 
         :return str - A summary of all metrics in the backtest. (See Analyzer.summarize_statistics method for more info)
         """
-
-        if df is None:
-            self.df_tf = self.loader._timeframe_setter(self.df, self.tf)
-            df = self.df_tf
-        else:
-            self.df_tf = self.loader._timeframe_setter(df, self.tf)
-            df = self.df_tf
-
+        df_tf = self.df_tf if type(df_tf) == None else df_tf
         strategy = FabStrategy() if not strategy else strategy
 
-        self.trade_history = TradeHistory()
-
-        list_of_str_dates = Helper.timestamp_object_to_string(df['date'])
+        list_of_str_dates = [str(date) for date in df_tf['date']]
 
         # Creating necessary moving averages from FabStrategy class
-        strategy.load_data(df)
+        strategy.load_data(df_tf)
         strategy.update_moving_averages()
 
         # Iterating through every single data point and checking if rules apply.
-        for row_index in range(231, len(df) - 1):
+        for row_index in range(231, len(df_tf) - 1):
             self.check_rule_1(strategy, row_index, list_of_str_dates)
             self.check_rule_2(strategy, row_index, list_of_str_dates, sensitivity)
             self.check_rule_3(strategy, row_index, list_of_str_dates)
 
+        return self.trade_history
+
+    def analyze(self):
         # Analyzing the trade history
-        analyze_backtest = Analyzer()
-        analyze_backtest.calculate_statistics(self.trade_history)
+        self.analyzer.calculate_statistics(self.trade_history)
 
         # Adding all trades in a list. They are in the form of: 1+profit margin. Ex. [1.04, 0.97, 1.12] etc.
-        self.trades = analyze_backtest.get_trades()
-        self.pnl = round(analyze_backtest.get_pnl(self.trades), 3)
-        self.summary = analyze_backtest.summarize_statistics()
-
-        return self.summary
+        self.trades = self.analyzer.get_trades()
+        self.pnl = round(self.analyzer.get_pnl(self.trades), 3)
+        self.summary = self.analyzer.summarize_statistics()
 
 
+    def start_backtest(self, df_th):
+        self.calculate_trading_history()
+        self.analyze()
+        return

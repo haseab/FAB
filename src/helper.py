@@ -25,6 +25,17 @@ class Helper:
         return list_of_percentages
 
     @staticmethod
+    def max_index(index_list):
+        max_index = 0
+        maximum = index_list[max_index]
+
+        for i in range(len(index_list)):
+            if index_list[i] > maximum:
+                max_index = i
+                maximum = index_list[i]
+        return max_index, maximum
+
+    @staticmethod
     def timestamp_object_to_string(date_list):
         return np.array([str(date_list.iloc[i]) for i in range(len(date_list))])
 
