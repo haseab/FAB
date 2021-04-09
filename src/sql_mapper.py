@@ -17,8 +17,8 @@ class SqlMapper:
     def connect_psql(self):
         self.psql = True
         if not self.conn:
-            print(f"Connected to Postgres Database: {self.kwargs['database']}")
             self.conn = psycopg2.connect(**self.kwargs)
+            print(f"Connected to Postgres Database: {self.kwargs['database']}")
         return self.conn
 
     def connect_mysql(self):
@@ -78,11 +78,14 @@ class SqlMapper:
         count = cursor.fetchall()[0][0]
         return count
 
-    def BULK_INSERT(self, table_name, columns, values, cursor = None):
+    def BULK_INSERT(self, table_name, columns, values, cursor = None, first_column=False):
         """Note: This function is NOT considering the ID when adding"""
         string_list = []
         string_list.append(f"INSERT INTO {table_name}(")
-        string_list.append(', '.join(columns[1:]) + ") VALUES ")
+        if first_column:
+            string_list.append(', '.join(columns) + ") VALUES ")
+        else:
+            string_list.append(', '.join(columns[1:]) + ") VALUES ")
         string_list.append(values)
         string = "".join(string_list) + ";"
 
@@ -90,15 +93,16 @@ class SqlMapper:
         self.conn.commit()
         return string
 
-    def write_to_db(self, df, table_name, batch_size = 10000, cursor=None):
-        columns = self.get_columns(table_name, cursor=cursor)
+    def write_to_db(self, df, table_name, batch_size = 10000, cursor=None, first_column=False, columns=None):
+        if not columns:
+            columns = self.get_columns(table_name, cursor=cursor)
         list_values = df.values.tolist()
 
         for i in range(0, len(df) - 1, batch_size):
             df_list = list_values[i:i + batch_size]
             values = ", ".join([str(tuple(i)) for i in df_list])
             time.sleep(0.2)
-            results = self.BULK_INSERT(table_name, columns, values, cursor)
+            results = self.BULK_INSERT(table_name, columns, values, cursor, first_column)
         return "Write Done"
 
 
@@ -160,5 +164,9 @@ class SqlMapper:
             columns = [cursor.description[i][0] for i in range(len(cursor.description))]
         return self.sql_resp_into_df(columns, results)
 
-
-
+    def UPDATE(self, table_name, indexing_column, indexing_row, column, new_value, cursor = None, bulk = False):
+        string = f"UPDATE {table_name} set {column} = {new_value} where {indexing_column} = {indexing_row} "
+        cursor.execute(string)
+        if not bulk:
+            self.conn.commit()
+        return string
