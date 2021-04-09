@@ -1,5 +1,9 @@
 from trading_history import TradeHistory
 from exceptions import Exceptions
+import pandas as pd
+from decimal import Decimal
+from helper import Helper
+import time
 
 class Analyzer:
     """
@@ -41,7 +45,6 @@ class Analyzer:
         self.trades = None
         self.trade_history = None
 
-
     def get_capital(self):
         return self.capital
 
@@ -66,11 +69,11 @@ class Analyzer:
     def get_average_loss(self, gross_loss, num_trades_lost):
         return gross_loss ** (1 / num_trades_lost) if num_trades_lost != 0 else 1
 
-    def get_num_trades_won(self, trades):
-        return len([trade for trade in trades if trade > 1])
+    def get_num_trades_won(self, trade_index):
+        return len(trade_index[trade_index['profitability']>1])
 
-    def get_num_trades_lost(self, trades):
-        return len([trade for trade in trades if trade <= 1])
+    def get_num_trades_lost(self, trade_index):
+        return len(trade_index[trade_index['profitability']<=1])
 
     def get_longest_run(self, trades):
         return self.calculate_longest_run(trades)[0]
@@ -103,6 +106,9 @@ class Analyzer:
             if trade < 1:
                 sums *= trade
         return sums
+
+    def calculate_profitability(self, trade_index):
+        return trade_index['profitability']
 
     def calculate_short_profitability(self, enter_price, exit_price, commission):
         return (commission ** 2) * (2 - exit_price / enter_price)
@@ -163,41 +169,212 @@ class Analyzer:
         return longest_drawdown, longest_counter
 
 
-    def calculate_statistics(self, trade_history: TradeHistory, commission= 0.9996) -> str:
-        """
-        Calculates the following metrics:
-        Profit Factor, trades won, trades lost, gross profit, gross loss, largest profit, largest loss
+    def get_general_indices(self,detailed_th):
+        self.candle_volatility_index = pd.DataFrame(detailed_th['high']/detailed_th['low'], columns=['volatility'])
+        self.candle_volume_index = pd.DataFrame(detailed_th['volume'])
+        self.candle_pps_index = pd.DataFrame(detailed_th['close'] / detailed_th['volume'], columns=['pps'])
+        return "Calculated all general indices"
 
-        params: list of lists, one row having the form: [LONG/SHORT, ENTER/EXIT, DATETIME, PRICE, RULE #],
-                Ex. ['Short', 'Enter', '2018-04-09 11:37:00', 6745.98, 'Rule 1'],
+    def get_long_indices(self, detailed_th, commission = 0.9996):
+        detailed_th = detailed_th[detailed_th['side'] == "Long"]
+        self.candle_long_index = pd.DataFrame(detailed_th['close']/detailed_th['open'], columns=['pnl'])
+        peak_long_index, trade_long_index = pd.DataFrame(), pd.DataFrame()
 
-        :return None
-        """
-        # Initializing all variables
-        self.trade_history = trade_history
-        self.trades = []
-        profitability = 1
+        for tid in detailed_th.index.unique('trade_id'):
+            subset_df = detailed_th.loc[tid, :]
+            first_index = subset_df.index[0]
+            last_index = subset_df.index[-1]
 
-        Exceptions.check_empty_trade_history(self.trade_history.allTrades)
+            if subset_df.loc[first_index, 'side'] != "Long":
+                continue
 
-        # Ensures all reported trades have been closed
-        if self.trade_history.last_trade().status == "Enter":
-            self.trade_history.allTrades = self.trade_history[:-1]
+            # Getting Peak Long Indices
+            peak_id = subset_df['high'].idxmax()
+            peak_price = subset_df.loc[peak_id, 'high']
+            trough_id = subset_df['low'].idxmin()
+            trough_price = subset_df.loc[trough_id, 'low']
+            peak_long_index = peak_long_index.append(pd.DataFrame([[tid, peak_id, peak_price, trough_id, trough_price]],
+                                        columns=['trade_id', "peak_id", "peak_price", "trough_id", "trough_price"]))
 
-        for i in range(1, len(self.trade_history), 2):
-            enter_trade = trade_history[i]
-            exit_trade = trade_history[i+1]
-            Exceptions.check_trade_status_exists(enter_trade)
+            # Getting Trade Long indices
+            side = subset_df.loc[first_index, 'side']
+            enter_trade = subset_df.loc[first_index, 'open']
+            exit_trade = subset_df.loc[last_index, 'open']
+            profitability = self.calculate_long_profitability(enter_trade, exit_trade, commission)
+            trade_long_index = trade_long_index.append(pd.DataFrame([[tid, side, first_index, enter_trade, last_index,
+                    exit_trade, round(profitability, 6)]], columns=['trade_id', 'side', "enter_id", "enter_trade",
+                                                                    "exit_id", "exit_trade", "profitability"]))
 
-            if enter_trade.side == "Short":
-                profitability = self.calculate_short_profitability(enter_trade.price, exit_trade.price, commission)
-            elif enter_trade.side == "Long":
-                profitability = self.calculate_long_profitability(enter_trade.price, exit_trade.price, commission)
+            self.peak_long_index = peak_long_index.set_index('trade_id')
+            self.trade_long_index = trade_long_index.set_index('trade_id')
 
-            # Final form of profitability is: 1 + profit margin. Profit margin CAN be negative here.
-            self.trades.append(round(profitability, 6))
+        return "Calculated all long indices"
 
-        return "calculated stats"
+    def get_short_indices(self, detailed_th, commission = 0.9996):
+        detailed_th = detailed_th[detailed_th['side'] == "Short"]
+        self.candle_short_index = pd.DataFrame(2 - detailed_th['close']/detailed_th['open'], columns=['pnl'])
+        peak_short_index, trade_short_index = pd.DataFrame(), pd.DataFrame()
+
+        for tid in detailed_th.index.unique('trade_id'):
+            subset_df = detailed_th.loc[tid, :]
+            first_index = subset_df.index[0]
+            last_index = subset_df.index[-1]
+
+            if subset_df.loc[first_index, 'side'] != "Short":
+                continue
+
+            # Getting Peak Short Indices
+            peak_id = subset_df['low'].idxmin()
+            peak_price = subset_df.loc[peak_id, 'low']
+            trough_id = subset_df['high'].idxmax()
+            trough_price = subset_df.loc[trough_id, 'high']
+            peak_short_index = peak_short_index.append(pd.DataFrame([[tid, peak_id, peak_price, trough_id, trough_price]],
+                                        columns=['trade_id', "peak_id", "peak_price", "trough_id", "trough_price"]))
+
+            # Getting Trade Short indices
+            side = subset_df.loc[first_index, 'side']
+            enter_trade = subset_df.loc[first_index, 'open']
+            exit_trade = subset_df.loc[last_index, 'open']
+            profitability = self.calculate_short_profitability(enter_trade, exit_trade, commission)
+            trade_short_index = trade_short_index.append(pd.DataFrame([[tid, side, first_index, enter_trade, last_index,
+                    exit_trade, round(profitability, 6)]], columns=['trade_id', "side", "enter_id", "enter_trade",
+                                                                    "exit_id", "exit_trade", "profitability"]))
+
+            self.peak_short_index = peak_short_index.set_index('trade_id')
+            self.trade_short_index = trade_short_index.set_index('trade_id')
+
+        return "Calculated all long indices"
+
+    def get_all_indices(self, detailed_th):
+        self.get_general_indices(detailed_th)
+        self.get_short_indices(detailed_th)
+        self.get_long_indices(detailed_th)
+        return self
+
+    def get_average_profit_rate(self, pnl_index: pd.Series):
+        df_profit = pnl_index[pnl_index['pnl'] > 1]['pnl']
+        return df_profit
+
+    def get_average_loss_rate(self, pnl_index: pd.Series):
+        df_profit = pnl_index[pnl_index['pnl'] < 1]['pnl']
+        return df_profit
+
+    def get_average_peak_profit_rate(self, pnl_index, peak_index):
+        means = pd.Series()
+        pnl_index = pnl_index[pnl_index['pnl'] > 1]
+        for tid in pnl_index.index.unique('trade_id'):
+            subset_df = pnl_index.loc[tid, :]
+            subset_df_mean = subset_df[subset_df.index <= peak_index.loc[tid, 'peak_id']].mean()
+            means = means.append(subset_df_mean)
+        return means
+
+    def get_average_peak_loss_rate(self, pnl_index, peak_index):
+        means = pd.Series()
+        pnl_index = pnl_index[pnl_index['pnl'] < 1]
+        for tid in pnl_index.index.unique('trade_id'):
+            subset_df = pnl_index.loc[tid, :]
+            subset_df_mean = subset_df[subset_df.index <= peak_index.loc[tid, 'peak_id']].mean()
+            means = means.append(subset_df_mean)
+        return means
+
+    def get_average_pps_rate(self, pps_index, peak_index):
+        """PPS - Price per share"""
+        return pps_index['pps']
+
+    def get_average_peak_pps_rate(self, pps_index, peak_index):
+        """PPS - Price per share"""
+        means = pd.Series()
+        for tid in pps_index.index.unique('trade_id'):
+            subset_df = pps_index.loc[tid, :]
+            subset_df_mean = subset_df[subset_df.index <= peak_index.loc[tid, 'peak_id']].mean()
+            means = means.append(subset_df_mean)
+        return means
+
+    def get_average_volatility_rate(self, volatility_index):
+        return volatility_index['volatility']
+
+    def get_average_volume_rate(self, volume_index):
+        return volume_index['volume']
+
+    def get_average_peak_volume_rate(self, volume_index, peak_index):
+        means = pd.Series()
+        for tid in volume_index.index.unique('trade_id'):
+            subset_df = volume_index.loc[tid, :]
+            subset_df_mean = subset_df[subset_df.index <= peak_index.loc[tid, 'peak_id']].mean()
+            means = means.append(subset_df_mean)
+        return means
+
+    def get_average_num_candles_to_peak(self, pnl_index, peak_index):
+        means = pd.Series()
+        for tid in pnl_index.index.unique('trade_id'):
+            subset_df = pnl_index.loc[tid, :]
+            subset_max = subset_df[subset_df.index <= peak_index.loc[tid, 'peak_id']]
+            means = means.append(pd.Series(len(subset_max)))
+        return means
+
+    def get_average_peak_unrealized_profit(self, trade_index, peak_index):
+        means = pd.DataFrame()
+        unrealized = None
+        for tid in trade_index.index.unique('trade_id'):
+            if trade_index.loc[tid, 'side'] == "Long":
+                unrealized = peak_index.loc[tid, 'peak_price'] / trade_index.loc[tid, 'enter_trade']
+            if trade_index.loc[tid, 'side'] == "Short":
+                unrealized = 2-(peak_index.loc[tid, 'peak_price'] / trade_index.loc[tid, 'enter_trade'])
+            means = means.append(pd.DataFrame([[tid, trade_index.loc[tid, 'profitability'], unrealized]], columns = ["tid", 'profit', 'peak_profit']))
+        return means
+
+    def get_average_peak_unrealized_loss(self, trade_index, peak_index):
+        means = pd.Series()
+        unrealized = None
+        for tid in trade_index.index.unique('trade_id'):
+            if trade_index.loc[tid, 'side'] == "Long":
+                unrealized = peak_index.loc[tid, 'trough_price'] / trade_index.loc[tid, 'enter_trade']
+            if trade_index.loc[tid, 'side'] == "Short":
+                unrealized = 2-(peak_index.loc[tid, 'trough_price'] / trade_index.loc[tid, 'enter_trade'])
+            means = means.append(pd.Series(unrealized))
+        return means
+
+    def get_average_volume(self, volume_index):
+        means = pd.Series()
+        for tid in volume_index.index.unique('trade_id'):
+            volume = volume_index.loc[tid, :].sum()
+            means = means.append(pd.Series(volume))
+        return means
+
+    def get_average_peak_volume(self, volume_index, peak_index):
+        means = pd.Series()
+        for tid in volume_index.index.unique('trade_id'):
+            subset_df = volume_index.loc[tid, :]
+            subset_max = subset_df[subset_df.index <= peak_index.loc[tid, 'peak_id']].sum()
+            means = means.append(pd.Series(subset_max))
+        return means
+
+    def get_captured_profit(self, average_win, average_unrealized_profit):
+        return average_win/average_unrealized_profit
+
+    def get_captured_loss(self, average_loss, average_unrealized_loss):
+        return average_loss/average_unrealized_loss
+
+    def green_red_candle_ratio(self, pnl_index):
+        num_green_candles = len(pnl_index[pnl_index['pnl'] > 1])
+        num_red_candles = len(pnl_index[pnl_index['pnl'] < 1])
+        return num_green_candles/num_red_candles
+
+    def get_minimum_rrr(self, longest_run, longest_drawdown):
+        return round((longest_run - 1) / (1 - longest_drawdown), 5)
+
+    def get_average_rrr(self, average_win, average_loss):
+        return average_win/average_loss
+
+    def get_unrealized_rrr(self, unrealized_profit, unrealized_loss):
+        return unrealized_profit/unrealized_loss
+
+    def get_amount_of_historical_data(self, df):
+        return len(df)
+
+    def get_trade_activity_ratio(self, pnl_index, df):
+        return len(pnl_index)/len(df)
+
 
     def summarize_statistics(self, capital: float = 9083.0) -> str:
         self.initial_capital, self.capital = capital, capital
