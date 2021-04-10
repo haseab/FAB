@@ -6,6 +6,7 @@ from trading_history import TradeHistory
 from trade import Trade
 from helper import Helper
 import pandas as pd
+from illustrator import Illustrator
 import numpy as np
 import os
 
@@ -51,8 +52,11 @@ class Backtester:
         self.end = datetime.today().strftime('%Y-%m-%d')
         self.tf = None
         self.df = None
+        self.df_th = None
         self.df_tf = None
         self.trade_history = TradeHistory()
+        self.illustrator = Illustrator()
+        self.strategy = FabStrategy()
         self.tf_data = None
         self.pnl = None
         self.trades = None
@@ -125,33 +129,10 @@ class Backtester:
         self.df = df.set_index('candle_id')
         return self.df
 
-    def load_timeframe_data(self, tf):
+    def load_timeframe_data(self, tf=None):
         tf = self.tf if not tf else tf
         self.df_tf = self.loader._timeframe_setter(self.df, tf)
         return self.df_tf
-
-    def validate_trades(self, trade_index: [float], trade_history: TradeHistory) -> [[[]]]:
-        """ Puts the already given information in a way that is easily debuggable
-            Groups TradeHistory object by "Enter" & "Exit" and adds the corresponding trade index to it.[
-
-        trade_index: a list of pnl percentages
-        trade_history: TradeHistory object which is just a list of Trade objects.
-         Example:
-             [['Long', 'Enter', '2017-10-05 15:43:00', 4333.59, 'Rule 1'],
-             ['Long', 'Exit', '2017-10-17 03:38:00', 5669.68, 'Rule 1'],
-             [30.7264]]
-        """
-        # Ex. [1.25,1.35,0.91,1.04] -> [25,35,-9,4]
-        trade_index_percentage = Helper.factor_to_percentage(trade_index)
-        trade_history_range = range(1, len(self.trade_history), 2)
-        trade_index_range = range(len(trade_index_percentage))
-
-        compiled_list = []
-
-        for i, j in zip(trade_history_range, trade_index_range):
-            compiled_list.append(self.trade_history[i:i + 2] + [[trade_index_percentage[j]]])
-
-        return compiled_list
 
     def check_rule_1(self, strategy, i, list_of_str_dates):
         if strategy.rule_1_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
@@ -170,18 +151,18 @@ class Backtester:
 
     def check_rule_2(self, strategy, i, list_of_str_dates, sensitivity):
         if strategy.rule_2_buy_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i+1], strategy.black[i], "Rule 2"]))
+            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.black[i], "Rule 2"]))
 
         elif strategy.rule_2_buy_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
                 self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i+1], strategy.price[i], "Rule 2"]))
+            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 2"]))
 
         elif strategy.rule_2_short_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i+1], strategy.black[i], "Rule 2"]))
+            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.black[i], "Rule 2"]))
 
         elif strategy.rule_2_short_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
                 self.trade_history.last_trade().side == "Short" and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i+1], strategy.price[i], "Rule 2"]))
+            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.price[i], "Rule 2"]))
 
     def check_rule_3(self, strategy, i, list_of_str_dates):
         if strategy.rule_3_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
@@ -189,6 +170,21 @@ class Backtester:
 
         elif strategy.rule_3_short_enter(i) and self.trade_history.last_trade().status != "Enter":
             self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i+1], strategy.price[i], "Rule 3"]))
+
+    def graph_trade(self, tid=None, index=None, rule=None, large_view=False):
+        """Assuming no previous index on trading history"""
+        if tid != None:
+            print(self.df_th.set_index('trade_id').loc[tid,:])
+            df_illus = self.df_th
+            return self.illustrator.show_trade_graph(df_illus, self.df_tf.reset_index().set_index('date'), tid, large_view=large_view)
+        elif index != None:
+            if rule:
+                df_illus = self.df_th.set_index(['rule', 'trade_id']).sort_values("rule").loc[f'Rule {rule}'].reset_index()
+            else:
+                df_illus = self.df_th
+            print(df_illus.loc[index, :])
+            tid = df_illus.loc[index, 'trade_id']
+            return self.illustrator.show_trade_graph(df_illus.set_index('trade_id'), self.df_tf.reset_index().set_index('date'), tid, large_view=large_view)
 
     def calculate_trading_history(self, df_tf: pd.DataFrame=None, strategy: FabStrategy=None, sensitivity: float=0.001) -> str:
         """
@@ -204,6 +200,8 @@ class Backtester:
 
         :return str - A summary of all metrics in the backtest. (See Analyzer.summarize_statistics method for more info)
         """
+        self.trade_history = TradeHistory()
+
         df_tf = self.df_tf if type(df_tf) == None else df_tf
         strategy = FabStrategy() if not strategy else strategy
 
