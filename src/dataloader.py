@@ -26,10 +26,11 @@ class _DataLoader:
     """
     SECOND_TO_MILLISECOND = 1000
 
-    def __init__(self):
+    def __init__(self, db=True):
         self.client = Client()
-        self.sql = SqlMapper()
-        self.conn = self.sql.connect_psql()
+        if db:
+            self.sql = SqlMapper()
+            self.conn = self.sql.connect_psql()
         # with open("fab_engine.txt", 'r') as file:
         #     self.engine = sqlalchemy.create_engine(file.readline())
 
@@ -177,7 +178,7 @@ class _DataLoader:
         if drop_last_row:
             df.drop(df.tail(1).index, inplace=True)
 
-        return df.set_index(['symbol', 'timeframe', 'timestamp'])
+        return df.reset_index().set_index(['symbol', 'timeframe', 'timestamp'])
 
     def get_all_binance_data(self, symbol, start_date, end_date=None, tf='1m'):
         list_symbol = self.client.get_historical_klines(symbol=symbol, interval=tf, start_str=start_date)
