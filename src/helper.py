@@ -55,8 +55,12 @@ class Helper:
     @staticmethod
     def into_dataframe(lst: list) -> pd.DataFrame:
         """Converts Binance response list into dataframe"""
-        return pd.DataFrame(lst, columns=["Timestamp", "Open", "High", "Low", "Close", "Volume",
-                                          "Timestamp_end", "", "", "", "", ""]).set_index("Timestamp")
+        data = pd.DataFrame(lst, columns=["timestamp", "open", "high", "low", "close", "volume",
+                                          "", "", "", "", "", ""]).set_index("timestamp")
+        data[["open", "high", "low", "close", "volume"]] = data[["open", "high", "low", "close", "volume"]].astype(
+            float)
+        return data
+
 
     @staticmethod
     def millisecond_timestamp_to_datetime(timestamp_list):
