@@ -8,7 +8,9 @@ from trading_history import TradeHistory
 import math
 import time
 import numpy as np
+from decouple import config
 import os
+from ftx import FtxClient
 
 
 class Trader():
@@ -38,14 +40,15 @@ class Trader():
     Please look at each method for descriptions
     """
 
-    def __init__(self):
+    def __init__(self, db=True):
         self.start = False
-        self.client = None
+        self.binance = Client()
+        self.ftx = FtxClient()
         self.capital = None
         self.leverage = 1 / 1000
         self.tf = None
         self.symbol = None
-        self.loader = _DataLoader()
+        self.loader = _DataLoader(db=db)
         self.df = None
 
     def check_on_switch(self) -> bool:
@@ -62,13 +65,49 @@ class Trader():
         """
         Sign in to account using API_KEY and using Binance API
         """
-        local_path = os.path.dirname(os.path.dirname(os.path.abspath("__file__"))) + r"\local\binance_api.txt"
-        info = pd.read_csv(local_path).set_index('Name')
-        API_KEY = info.loc["API_KEY", "Key"]
-        SECRET = info.loc["SECRET", "Key"]
-        self.client = Client(API_KEY, SECRET)
-        self.capital = int(float(self.client.futures_account_balance()[0]['balance'])) + additional_balance
-        return "Welcome Haseab"
+        # local_path_binance = os.path.dirname(os.path.dirname(os.path.abspath("__file__"))) + r"\local\binance_api.txt"
+        # local_path_ftx = os.path.dirname(os.path.dirname(os.path.abspath("__file__"))) + r"\local\ftx_api.txt"
+        # info_binance = pd.read_csv(local_path_binance).set_index('Name')
+        # info_ftx = pd.read_csv(local_path_ftx).set_index('Name')
+
+        API_KEY_BINANCE = config('API_KEY_BINANCE')
+        API_SECRET_BINANCE  = config('API_SECRET_BINANCE')
+
+        API_KEY_FTX = config('API_KEY_FTX')
+        API_SECRET_FTX  = config('API_SECRET_FTX')
+
+        self.binance = Client(api_key=API_KEY_BINANCE, api_secret=API_SECRET_BINANCE)
+        self.ftx = FtxClient(api_key=API_KEY_FTX, api_secret=API_SECRET_FTX)
+        return "Connected to Both Binance and FTX"
+
+    def get_capital(self, additional_balance=0):
+
+        asset_prices = {symbol['symbol'][:-4]: float(symbol['lastPrice']) for symbol in self.binance.get_ticker() if symbol['symbol'][-4:] == 'USDT'}
+
+        # Binance  account balance
+        binance_futures_balance = sum([float(i['balance']) for i in self.binance.futures_account_balance()])
+        binance_asset_balances = {symbol['asset']: (float(symbol['free']) + float(symbol['locked'])) for symbol in self.binance.get_account()['balances']}
+        binance_usdt_balance = binance_asset_balances["USDT"]
+
+        binance_spot_balance = 0
+        for binance_asset in binance_asset_balances:
+            if binance_asset in asset_prices:
+                binance_spot_balance += asset_prices[binance_asset] * binance_asset_balances[binance_asset]
+
+        binance_balance = binance_spot_balance + binance_usdt_balance + binance_futures_balance
+
+        # FTX  account balance
+        ftx_asset_balances = {symbol['coin']:symbol['total'] for symbol in self.ftx.get_balances()}
+        ftx_usdt_balance = ftx_asset_balances['USDT'] + ftx_asset_balances['USD']
+
+        ftx_spot_balance = 0
+        for ftx_asset in ftx_asset_balances:
+            if ftx_asset in asset_prices:
+                ftx_spot_balance += asset_prices[ftx_asset] * ftx_asset_balances[ftx_asset]
+
+        ftx_balance = ftx_spot_balance + ftx_usdt_balance
+
+        return ftx_balance + binance_balance + additional_balance
 
     def set_leverage(self, leverage: float) -> float:
         """Sets the current leverage of the account: should normally be 1. And 0.001 for testing purposes"""
@@ -105,6 +144,7 @@ class Trader():
                 df = df.append(self.loader._get_binance_futures_candles(symbol, int(ranges[i]), int(ranges[i + 1]), now))
             except IndexError:
                 pass
+        df['symbol'] = [symbol for _ in range(len(df))]
         return df.drop_duplicates()
 
     def _update_data(self, diff: int, symbol: str, ) -> None:
@@ -122,8 +162,8 @@ class Trader():
         # Getting minute candlestick data. Number of minute candlesticks represented by "minutes" variable
         last_few_candles = self.loader._get_binance_futures_candles(symbol, minutes_disparity)
         # Adding a legible Datetime column and using the timestamp data to obtain datetime data
-        last_few_candles['Datetime'] = Helper.millisecond_timestamp_to_datetime(last_few_candles.index)
-        last_few_candles = last_few_candles[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
+        last_few_candles['datetime'] = Helper.millisecond_timestamp_to_datetime(last_few_candles.index)
+        last_few_candles = last_few_candles[["datetime", "open", "high", "low", "close", "volume"]]
 
         # Abstracting minute data into appropriate tf
         last_few_candles = self.loader._timeframe_setter(last_few_candles, self.tf, 0)
@@ -143,7 +183,7 @@ class Trader():
         Returns float
             Ex. If a 1.000 BTC position is open, it will return 1.0
         """
-        for coin_futures_info in self.client.futures_position_information():
+        for coin_futures_info in self.binance.futures_position_information():
             if coin_futures_info['symbol'] == symbol:
                 return float(coin_futures_info["positionAmt"])
         return None
@@ -166,7 +206,7 @@ class Trader():
         if tf in map_tf.keys():  # Note: 12H, 1D, 3D, 1W, 1M are also recognized
             # Fetching data from Binance if it matches the eligible timeframe, as it will be faster
             df = Helper.into_dataframe(
-                self.client.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time))
+                self.binance.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time))
             df.drop(df.tail(1).index, inplace=True)
         else:
             # If it doesn't match Binance available timeframes, it must be transformed after fetching 1m data.
@@ -174,15 +214,13 @@ class Trader():
             df = self.loader._timeframe_setter(df, tf)
 
         # Adding Datetime column for readability of the timestamp. Also more formatting done
-        df['Datetime'] = Helper.millisecond_timestamp_to_datetime(df.index)
-        df = df[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
-        df[["Open", "High", "Low", "Close", "Volume"]] = df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
+        df['datetime'] = Helper.millisecond_timestamp_to_datetime(df.reset_index()['timestamp'])
+        df = df[["datetime", "open", "high", "low", "close", "volume"]]
 
         self.df = df
         self.symbol = symbol
 
-        return f"Symbol changed to {self.symbol}"
-
+        return df
     def get_current_tf_candle(self, tf):
         minute_candles = self.loader._get_binance_futures_candles("BTCUSDT", tf)
         minute_candles['Datetime'] = Helper.millisecond_timestamp_to_datetime(minute_candles.index)
@@ -238,7 +276,7 @@ class Trader():
 
         Returns None.
         """
-        client = self.client
+        client = self.binance
         strategy.load_data(self.df)
         strategy.update_moving_averages()
 
