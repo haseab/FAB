@@ -36,7 +36,7 @@ class PerformanceChecker:
         df_balances = pd.DataFrame()
         df_balances = df_balances.append(pd.DataFrame([[start_date, 0, current_capital]],
                                                       columns=['date', 'week_num', 'capital']))
-        df_balances.to_csv('trading_actual_values.csv', index=False)
+        df_balances.to_csv('trading_balance.csv', index=False)
 
         goal_amount =df_bounds["goal limit"].iloc[-1]
         print(f'Current_money:      {self.current_capital:,}')
@@ -86,20 +86,25 @@ class PerformanceChecker:
             current_week = df_bounds[df_bounds['date'] <= datetime.now()]['week number'].iloc[-1] + 1
             green_line = df_bounds.set_index('week number').loc[1]['upper limit']
             y2_min = min(y2)
+            y2_max = max(y2)
 
             plt.xlim(0, current_week)
-            plt.ylim(min(19350, y2_min), green_line)
+            plt.ylim(min(19350, y2_min), max(y2_max, green_line))
         plt.scatter(x2, y2, color='black')
         plt.plot(x2, y2, color='blue', linewidth=3)
 
         return plt.show()
 
-    def monitor_progress(self):
-        self.update_progress(5345, commit=False)
-        while True:
-            time.sleep(86400)
-            clear_output(wait=True)
-            self.update_progress(5345, commit=True)
+    def monitor_progress(self, additional_balance=0):
+        self.update_progress(additional_balance, commit=False)
+        raw_input = input("Would you like to continue? ")
+        if raw_input in ['No', 'n', 'N', 'NO']:
+            return None
+        else:
+            while True:
+                time.sleep(3600)
+                clear_output(wait=True)
+                self.update_progress(additional_balance, commit=True)
 
 
 
