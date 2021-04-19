@@ -10,7 +10,9 @@ import time
 import numpy as np
 from decouple import config
 import os
+from illustrator import Illustrator
 from ftx import FtxClient
+from IPython.display import display, clear_output
 
 
 class Trader():
@@ -49,6 +51,7 @@ class Trader():
         self.tf = None
         self.symbol = None
         self.loader = _DataLoader(db=db)
+        self.illustrator = Illustrator()
         self.df = None
 
     def check_on_switch(self) -> bool:
@@ -85,7 +88,8 @@ class Trader():
         asset_prices = {symbol['symbol'][:-4]: float(symbol['lastPrice']) for symbol in self.binance.get_ticker() if symbol['symbol'][-4:] == 'USDT'}
 
         # Binance  account balance
-        binance_futures_balance = sum([float(i['balance']) for i in self.binance.futures_account_balance()])
+        binance_account = self.binance.futures_account()
+        binance_futures_balance = float(binance_account['totalCrossWalletBalance']) + float(binance_account['totalCrossUnPnl'])
         binance_asset_balances = {symbol['asset']: (float(symbol['free']) + float(symbol['locked'])) for symbol in self.binance.get_account()['balances']}
         binance_usdt_balance = binance_asset_balances["USDT"]
 
@@ -97,15 +101,17 @@ class Trader():
         binance_balance = binance_spot_balance + binance_usdt_balance + binance_futures_balance
 
         # FTX  account balance
-        ftx_asset_balances = {symbol['coin']:symbol['total'] for symbol in self.ftx.get_balances()}
-        ftx_usdt_balance = ftx_asset_balances['USDT'] + ftx_asset_balances['USD']
+        ftx_account = self.ftx.get_account_info()
+        ftx_balance = ftx_account['totalAccountValue']
 
-        ftx_spot_balance = 0
-        for ftx_asset in ftx_asset_balances:
-            if ftx_asset in asset_prices:
-                ftx_spot_balance += asset_prices[ftx_asset] * ftx_asset_balances[ftx_asset]
-
-        ftx_balance = ftx_spot_balance + ftx_usdt_balance
+        # ftx_asset_balances = {symbol['coin']:symbol['total'] for symbol in self.ftx.get_balances()}
+        # ftx_usdt_balance = ftx_asset_balances['USDT'] + ftx_asset_balances['USD']
+        #
+        # ftx_spot_balance = 0
+        # for ftx_asset in ftx_asset_balances:
+        #     if ftx_asset in asset_prices:
+        #         ftx_spot_balance += asset_prices[ftx_asset] * ftx_asset_balances[ftx_asset]
+        # ftx_balance = ftx_spot_balance + ftx_usdt_balance
 
         return ftx_balance + binance_balance + additional_balance
 
@@ -118,6 +124,22 @@ class Trader():
         """Sets the timeframe of the trading data"""
         self.tf = tf
         return self.tf
+
+    def show_live_chart(self, symbol, tf, refresh_rate=1):
+        while True:
+            time.sleep(refresh_rate)
+            clear_output(wait=True)
+            self.show_current_chart('BTCUSDT', 1)
+
+    def show_current_chart(self, symbol=None, tf=None, metric_id=None):
+        if metric_id:
+            cursor = self.loader.conn.cursor()
+            df_metrics = self.loader.sql.SELECT(f"* FROM metrics where metric_id = {metric_id}", cursor)[['symbol', 'tf']]
+            symbol = df_metrics['symbol'].iloc[0]
+            tf = df_metrics['tf'].iloc[0]
+
+        data = self.set_asset(symbol, tf, max_candles_needed=375, drop_last_row=False)
+        return self.illustrator.graph_df(data)
 
     def get_necessary_data(self, symbol: str, tf: int, max_candles_needed: int) -> pd.DataFrame:
         """
@@ -138,6 +160,7 @@ class Trader():
         now = time.time()
         df = pd.DataFrame()
         ranges = Helper.determine_candle_positions(max_candles_needed, tf)
+
 
         for i in range(len(ranges)):
             try:
@@ -188,7 +211,7 @@ class Trader():
                 return float(coin_futures_info["positionAmt"])
         return None
 
-    def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 231) -> str:
+    def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 231, drop_last_row=True) -> str:
         """
         Set Symbol of the ticker and load the necessary data with the given timeframe to trade it
 
@@ -207,19 +230,18 @@ class Trader():
             # Fetching data from Binance if it matches the eligible timeframe, as it will be faster
             df = Helper.into_dataframe(
                 self.binance.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time))
-            df.drop(df.tail(1).index, inplace=True)
+            if drop_last_row:
+                df.drop(df.tail(1).index, inplace=True)
         else:
             # If it doesn't match Binance available timeframes, it must be transformed after fetching 1m data.
             df = self.get_necessary_data(symbol, tf, max_candles_needed)
-            df = self.loader._timeframe_setter(df, tf)
+            df = self.loader._timeframe_setter(df, tf, drop_last_row=drop_last_row)
 
         # Adding Datetime column for readability of the timestamp. Also more formatting done
-        df['datetime'] = Helper.millisecond_timestamp_to_datetime(df.reset_index()['timestamp'])
-        df = df[["datetime", "open", "high", "low", "close", "volume"]]
+        df = df[["date", "open", "high", "low", "close", "volume"]]
 
         self.df = df
         self.symbol = symbol
-
         return df
     def get_current_tf_candle(self, tf):
         minute_candles = self.loader._get_binance_futures_candles("BTCUSDT", tf)
