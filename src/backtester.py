@@ -391,10 +391,10 @@ class Backtester:
     def collect_historical_metrics(self, symbol_list, tf_list):
         df_metrics_master = pd.DataFrame()
         for symbol in symbol_list:
+            print(f"Working on: {symbol}")
             b = Backtester()
             b.set_symbol(symbol)
             b.load_backtesting_data(all_data=True)
-            print(f"Working on: {symbol}")
             for tf in tf_list:
                 print(f"\t Working on: {tf}m")
                 b2 = Backtester(db=False)

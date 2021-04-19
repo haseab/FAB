@@ -401,6 +401,8 @@ class Analyzer:
         return round((longest_run - 1) / (1 - longest_drawdown), 5)
 
     def get_average_rrr(self, average_win, average_loss):
+        if average_win == 1 or average_loss == 1:
+            return -0.001
         return (average_win-1)/(1-average_loss)
 
     def get_unrealized_rrr(self, peak_unrealized_profit_index, peak_unrealized_loss_index):

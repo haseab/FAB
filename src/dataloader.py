@@ -173,12 +173,14 @@ class _DataLoader:
 
         # Selecting every nth value in the list, where n is the timeframe
         df['close'] = [dataframe['close'].iloc[i:tf + i].iloc[-1] for i in range(shift, len(dataframe['close']), tf)]
+        # df['close'] = dataframe[tf+shift-1::tf].append(dataframe.iloc[-1:])['close'].values
 
         # Dropping the last value, this gets rid of the candle that isn't complete until the end of the tf
         if drop_last_row:
             df.drop(df.tail(1).index, inplace=True)
 
         return df.reset_index().set_index(['symbol', 'timeframe', 'timestamp'])
+
 
     def get_all_binance_data(self, symbol, start_date, end_date=None, tf='1m'):
         list_symbol = self.client.get_historical_klines(symbol=symbol, interval=tf, start_str=start_date)

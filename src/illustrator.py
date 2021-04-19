@@ -4,6 +4,7 @@ from fab_strategy import FabStrategy
 import mplfinance as mpf
 from helper import Helper
 import numpy as np
+from datetime import timedelta
 
 
 class Illustrator:
@@ -39,21 +40,25 @@ class Illustrator:
 
         return self.graph_trade_data(illus_data, position_side, tid, save)
 
-
     def download_all_trades(self, df_trading_history, df_tf_candles, save=False):
         df_tf_candles = df_tf_candles.reset_index().set_index('date')
         df_th = df_trading_history.reset_index().set_index('tid')
-
-
         for tid in df_th.index:
             self.show_trade_graph(df_th, df_tf_candles, tid, save)
             print('saved file')
         return "Saved all of them"
 
-    def graph_df(self, df_graph, sma=True):
+    def graph_df(self, df_graph, sma=True, space=True):
+        if df_graph.index.name != 'date':
+            df_graph = df_graph.reset_index().set_index('date')
+        try:
+            df_graph['green']
+        except KeyError:
+            df_graph = self.add_sma_to_df(df_graph)
         df_graph, addplot = self.set_graph_style(df_graph, sma=sma)
+
         graph = mpf.plot(df_graph, type='candle', figratio=(40, 15), datetime_format='%Y-%m-%d %H:%M:%S',
-                         tight_layout=True, xrotation=5, style=self.haseab_style, addplot=addplot)
+                         tight_layout=True, xrotation=5, xlim=(0, len(df_graph)+50), style=self.haseab_style, addplot=addplot)
 
     def set_graph_style(self, df_graph, sma=True):
         addplot = []
@@ -68,7 +73,7 @@ class Illustrator:
             addplot = [ma_green, ma_orange, ma_blue, ma_black]
         return df_graph, addplot
 
-    def add_sma_to_def(self, df):
+    def add_sma_to_df(self, df):
         self.strategy.load_data(df)
         self.strategy.update_moving_averages()
 
@@ -83,7 +88,7 @@ class Illustrator:
         :return plot """
         df_graph = dataframe.copy()
 
-        df_graph = self.add_sma_to_def(df_graph)
+        df_graph = self.add_sma_to_df(df_graph)
 
         if save:
             file_name = f"C:\\Users\\haseab\\Desktop\\Python\\PycharmProjects\\FAB\\local\\PNG Images\\BTCUSDT Trade No {tid}.png"
