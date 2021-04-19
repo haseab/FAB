@@ -56,10 +56,11 @@ class Helper:
     def into_dataframe(lst: list) -> pd.DataFrame:
         """Converts Binance response list into dataframe"""
         data = pd.DataFrame(lst, columns=["timestamp", "open", "high", "low", "close", "volume",
-                                          "", "", "", "", "", ""]).set_index("timestamp")
+                                          "", "", "", "", "", ""])
         data[["open", "high", "low", "close", "volume"]] = data[["open", "high", "low", "close", "volume"]].astype(
             float)
-        return data
+        data['date'] = Helper.millisecond_timestamp_to_datetime(data['timestamp'])
+        return data.set_index("timestamp")
 
 
     @staticmethod
@@ -86,7 +87,7 @@ class Helper:
         split_number = math.ceil(tf * max_candles_needed / 1000) + 1
 
         # Determining the exact indices of when the set boundaries end
-        ranges = np.ceil(np.linspace(0, tf * 235, num=split_number))
+        ranges = np.ceil(np.linspace(0, tf * max_candles_needed, num=split_number))
 
         # Converting all indices into integers and reversing the list
         ranges = [int(index) for index in ranges[::-1]]
