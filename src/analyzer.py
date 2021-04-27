@@ -139,7 +139,7 @@ class Analyzer:
                     exit_trade, round(profitability, 5)]], columns=['tid', 'side', "enter_id", "enter_trade",
                                                                     "exit_id", "exit_trade", "profitability"]))
             # Getting Peak Long Indices
-            if len(subset_df) < tf:
+            if len(subset_df) <= tf:
                 peak_id = subset_df['high'].idxmax()
             else:
                 peak_id = subset_df['high'][tf:].idxmax()
@@ -176,7 +176,7 @@ class Analyzer:
                     exit_trade, round(profitability, 5)]], columns=['tid', "side", "enter_id", "enter_trade",
                                                                     "exit_id", "exit_trade", "profitability"]))
             # Getting Peak Short Indices
-            if len(subset_df) < tf:
+            if len(subset_df) <= tf:
                 peak_id = subset_df['low'].idxmin()
             else:
                 peak_id = subset_df['low'][tf:].idxmin()

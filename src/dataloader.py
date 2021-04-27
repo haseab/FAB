@@ -154,6 +154,9 @@ class _DataLoader:
 
         :return dataframe
         """
+        if tf == 1:
+            return dataframe
+
         if shift == None:
             # This is making sure that there it shifts so that the last tf candle includes the last 1-minute candle
             shift = tf - len(dataframe) % tf - 1

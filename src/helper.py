@@ -22,6 +22,7 @@ class Helper:
                 list_of_percentages.append(-round((1 - factor) * 100, 4))
             else:
                 list_of_percentages.append(round((factor - 1) * 100, 4))
+
         return list_of_percentages
 
     @staticmethod
