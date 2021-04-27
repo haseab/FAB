@@ -9,6 +9,9 @@ import pandas as pd
 from illustrator import Illustrator
 import numpy as np
 from functools import reduce
+import random
+import time
+from IPython.display import display, clear_output
 import os
 
 
@@ -150,12 +153,12 @@ class Backtester:
                 and self.trade_history.last_trade().status == "Enter":
             self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i+1], strategy.price[i], "Rule 1"]))
 
-    def check_rule_2(self, strategy, i, list_of_str_dates, sensitivity):
-        if strategy.rule_2_buy_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.black[i]*(1+sensitivity), "Rule 2"]))
+    def check_rule_2(self, strategy, i, list_of_str_dates):
+        if strategy.rule_2_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
+            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.black[i]*(1+strategy.allowance), "Rule 2"]))
 
-        elif strategy.rule_2_short_enter(i, sensitivity) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.black[i]*(1-sensitivity), "Rule 2"]))
+        elif strategy.rule_2_short_enter(i) and self.trade_history.last_trade().status != "Enter":
+            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.black[i]*(1-strategy.allowance), "Rule 2"]))
 
         if strategy.rule_2_buy_stop_absolute(i) and self.trade_history.last_trade().rule == "Rule 2" and \
                 self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
@@ -181,29 +184,156 @@ class Backtester:
         elif strategy.rule_3_short_enter(i) and self.trade_history.last_trade().status != "Enter":
             self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i+1], strategy.price[i], "Rule 3"]))
 
-    def graph_trade(self, tid=None, index=None, rule=None, adjust_left_view= 29, adjust_right_view = 10, df_th = None):
+    def graph_trade(self, tid=None, index=None, rule=None, adjust_left_view=150, adjust_right_view=10, df_th=None,
+                    tf=None, test_df=False, flat=False, data_only = False):
         """Assuming no previous index on trading history
         Indices must also be calculated! """
 
         df_th = self.df_th if type(df_th) == type(None) else df_th
+        tf = self.tf if not tf else tf
+        df_tf = self.df_tf
+        # test_df = False if tf == self.tf else test_df
 
-        if tid != None:
-            df_th = df_th.set_index('tid')
-            print(df_th.drop(['strategy', 'side', 'symbol', 'tf', 'candles'], axis=1).loc[tid, :])
-            df_illus = df_th
-            return self.illustrator.show_trade_graph(df_illus, self.df_tf.reset_index().set_index('date'), tid,
-                                                     adjust_left_view=adjust_left_view, adjust_right_view=adjust_right_view)
-        elif index != None:
+        if index != None:
             if rule:
                 df_illus = df_th.set_index(['rule', 'tid']).sort_values("rule").loc[f'Rule {rule}'].reset_index()
             else:
                 df_illus = df_th
-            print(df_illus.drop(['strategy', 'side', 'symbol', 'tf', 'candles'], axis=1).loc[index, :])
             tid = df_illus.loc[index, 'tid']
-            return self.illustrator.show_trade_graph(df_illus.set_index('tid'), self.df_tf.reset_index().set_index('date'), tid,
-                                                     adjust_left_view=adjust_left_view, adjust_right_view=adjust_right_view)
 
-    def calculate_trading_history(self, df_tf: pd.DataFrame=None, strategy: FabStrategy=None, sensitivity: float=0.001) -> str:
+        if self.tf != tf:
+            start_datetime = df_th.set_index('tid').loc[tid, 'enter_date'] - pd.Timedelta((231 * tf) + adjust_left_view * tf, 'minutes')
+            end_datetime = df_th.set_index('tid').loc[tid, 'exit_date'] + pd.Timedelta((adjust_right_view * tf), 'minutes')
+            trade_enter_datetime = df_th.set_index('tid').loc[tid, 'enter_date'] + pd.Timedelta(self.tf-1, 'minutes')
+
+            # raise Exception(start_datetime, end_datetime)
+            df = self.df.reset_index()
+            trade_df = df[df['date'].between(start_datetime, end_datetime)].copy()
+            df_tf = self.loader._timeframe_setter(trade_df, tf)
+
+            if test_df:
+                pre_trade_df = df[df['date'].between(start_datetime, trade_enter_datetime)].copy()
+                pre_trade_df_tf = self.loader._timeframe_setter(pre_trade_df, tf, drop_last_row=False)
+                df_graph = self.illustrator.add_sma_to_df(pre_trade_df_tf).set_index('date')
+                if data_only:
+                    return df_graph
+                return self.illustrator.graph_df(df_graph, flat=flat)
+
+            # self.new = trade_df, df, df_tf, pre_trade_df, pre_trade_df_tf
+
+        if tid != None:
+            df_th = df_th.set_index('tid')
+            if not data_only and not test_df:
+                print(df_th.drop(['strategy', 'side', 'symbol', 'tf', 'candles'], axis=1).loc[tid, :])
+            df_illus = df_th
+            return self.illustrator.prepare_trade_graph_data(df_illus, df_tf, tid, tf=tf, data_only=data_only, flat=flat,
+                                                     adjust_left_view=adjust_left_view, adjust_right_view=adjust_right_view)
+        if index != None:
+            if not data_only and not test_df:
+                print(df_illus.drop(['strategy', 'side', 'symbol', 'tf', 'candles'], axis=1).loc[index, :])
+            return self.illustrator.prepare_trade_graph_data(df_illus.set_index('tid'), df_tf, tid, data_only=False, flat=flat,
+                                                     tf=tf, adjust_left_view=adjust_left_view, adjust_right_view=adjust_right_view)
+
+    def graph_benchmark(self, benchmark, enter_datetime, adjust_left_view, base_tf, space=50, flat=False, tf=None, exit_datetime=None):
+        print("Benchmark: BTCUSDT")
+        tf = base_tf if not tf else tf
+        enter_datetime = enter_datetime + pd.Timedelta(base_tf*2-1, 'minutes')
+        df_bench = benchmark.df[benchmark.df['date'] <= enter_datetime].tail((adjust_left_view + 231+2) * tf)
+        if exit_datetime:
+            exit_datetime += pd.Timedelta(15*base_tf, 'minutes')
+            trade_length = int((exit_datetime - enter_datetime).total_seconds()//(60*tf)) + 1
+            df_bench = benchmark.df[benchmark.df['date'] <= exit_datetime].tail((adjust_left_view + 231+trade_length) * tf)
+        df_bench_tf = benchmark.loader._timeframe_setter(df_bench, tf).reset_index().set_index('date')
+        self.illustrator.graph_df(df_bench_tf, flat=flat, space=space)
+
+    def test_your_intuition(self, df_th, rule, limit=100, offset=0, adjust_left_view=200,
+                            show_answers=False, flat=True, benchmark=None, save=False):
+        dic = {1: 'Rule 1', 2: 'Rule 2', 3: 'Rule 3'}
+        df_th = df_th.set_index('tid')
+        self.my_trades = []
+        df_th = df_th[df_th['rule'] == dic[rule]]
+        base_tf = df_th['tf'].iloc[0]
+
+        random.seed(1)
+        self.all_trades = list(df_th.index[offset:offset+limit])
+        random.shuffle(self.all_trades)
+
+        for i, tid in enumerate(self.all_trades):
+            enter_datetime = self.df_th.set_index('tid')['enter_date'].loc[tid]
+            exit_datetime = self.df_th.set_index('tid')['exit_date'].loc[tid]
+            clear_output(wait=True)
+            i += 1
+            print(f"Trade {i} of {limit} ")
+            df_graph = self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view, df_th=df_th.reset_index(),
+                                        data_only=True).reset_index()
+            self.illustrator.graph_df(df_graph[df_graph['date'] <= enter_datetime].set_index('date'), space=50, flat=flat)
+
+            if type(benchmark) != type(None):
+                self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf)
+
+            while True:
+                answer = input('Would you make this trade? y/n: ')
+                if answer == 'y':
+                    self.my_trades.append(tid)
+                    break
+                elif answer == 'n':
+                    break
+                elif answer.isdigit():
+                    clear_output(wait=True)
+                    print(f"Trade {i} of {limit} ")
+                    df_graph_tf = self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view, df_th=df_th.reset_index(),
+                                                   test_df=True, tf=int(answer), data_only=True).reset_index()
+
+                    if len(df_graph_tf) == 0:
+                        clear_output(wait=True)
+                        print('Not enough data to cover timeframe, returning to original timeframe.....')
+                        df_graph_tf = self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view,
+                                                       df_th=df_th.reset_index(), data_only=True).reset_index()
+
+                    df_graph_tf_predata = df_graph_tf[df_graph_tf['date'] <= enter_datetime + pd.Timedelta(base_tf-1, 'minutes')]
+                    self.illustrator.graph_df(df_graph_tf_predata, flat=flat, space=50)
+
+                    if type(benchmark) != type(None):
+                        self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf, tf=int(answer))
+
+                elif answer == 'saveoff':
+                    save = False
+                elif answer == 'saveon':
+                    save = True
+                else:
+                    print('no valid answer entered, try again....')
+                    continue
+            if show_answers:
+                clear_output(wait=True)
+                print(f"Trade {i} of {limit} ")
+                self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view, test_df=True, df_th=df_th.reset_index(), data_only=False)
+
+                if type(benchmark) != type(None):
+                    self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf, space=0, exit_datetime=exit_datetime)
+
+                input('Press any key to continue... ')
+
+        self.trade_disparity = pd.DataFrame()
+        self.trade_disparity['tid'] = self.all_trades
+        self.trade_disparity['my trades'] = [True if tid in self.my_trades else False for tid in self.trade_disparity['tid']]
+        self.trade_disparity = self.trade_disparity.merge(self.analyzer.trade_index[['profitability']], on='tid')
+
+        if save:
+            symbol = df_th['symbol'].iloc[0]
+            first_tid = self.all_trades[0]
+            last_tid = self.all_trades[-1]
+            if type(benchmark) == type(None):
+                self.trade_disparity.to_csv(f'Intuition test {symbol} {base_tf}m, Rule #{rule}, tids {first_tid}-{last_tid}.csv', index=False)
+            else:
+                self.trade_disparity.to_csv(f'Intuition test {symbol} {base_tf}m with benchmark, Rule #{rule}, tids {first_tid}-{last_tid}.csv', index=False)
+
+        theoretical_profitability = self.trade_disparity['profitability'].product()
+        actual_profitability = self.trade_disparity[self.trade_disparity['my trades']]['profitability'].product()
+
+        return theoretical_profitability, actual_profitability
+
+
+    def calculate_trading_history(self, df_tf: pd.DataFrame=None, strategy: FabStrategy=None) -> str:
         """
         Tests the asset in history, with respect to the rules outlined in the FabStrategy class.
         It adds applicable trades to a list and then an Analyzer object summarizes the profitability
@@ -211,8 +341,8 @@ class Backtester:
         Parameters:
         -----------
         df_tf:       pd.DataFrame - The abstracted tf data that is ready for backtesting. This is not minute data if tf != 1
-        strategy:    Object - any trading strategy that takes the index and sensitivity as input, and returns boolean values.
-        sensitivity: float  - Allowance between price and MA. The larger the value, the further and less sensitive.
+        strategy:    Object - any trading strategy that takes the index and allowance as input, and returns boolean values.
+        allowance: float  - Allowance between price and MA. The larger the value, the further and less sensitive.
 
 
         :return str - A summary of all metrics in the backtest. (See Analyzer.summarize_statistics method for more info)
@@ -229,7 +359,7 @@ class Backtester:
         # Iterating through every single data point and checking if rules apply.
         for row_index in range(231, len(df_tf) - 1):
             self.check_rule_1(strategy, row_index, list_of_str_dates)
-            self.check_rule_2(strategy, row_index, list_of_str_dates, sensitivity)
+            self.check_rule_2(strategy, row_index, list_of_str_dates)
             self.check_rule_3(strategy, row_index, list_of_str_dates)
 
         return self.trade_history
