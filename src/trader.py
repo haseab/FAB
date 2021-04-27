@@ -89,7 +89,7 @@ class Trader():
 
         # Binance  account balance
         binance_account = self.binance.futures_account()
-        binance_futures_balance = float(binance_account['totalCrossWalletBalance']) + float(binance_account['totalCrossUnPnl'])
+        binance_futures_balance = float(binance_account['totalCrossWalletBalance']) # + float(binance_account['totalCrossUnPnl'])
         binance_asset_balances = {symbol['asset']: (float(symbol['free']) + float(symbol['locked'])) for symbol in self.binance.get_account()['balances']}
         binance_usdt_balance = binance_asset_balances["USDT"]
 
@@ -100,7 +100,7 @@ class Trader():
 
         binance_balance = binance_spot_balance + binance_usdt_balance + binance_futures_balance
 
-        # FTX  account balance
+        # FTX  account balanced
         ftx_account = self.ftx.get_account_info()
         ftx_balance = ftx_account['totalAccountValue']
 
@@ -129,7 +129,7 @@ class Trader():
         while True:
             time.sleep(refresh_rate)
             clear_output(wait=True)
-            self.show_current_chart('BTCUSDT', 1)
+            self.show_current_chart('BTCUSDT', tf)
 
     def show_current_chart(self, symbol=None, tf=None, metric_id=None):
         if metric_id:
@@ -211,7 +211,7 @@ class Trader():
                 return float(coin_futures_info["positionAmt"])
         return None
 
-    def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 231, drop_last_row=True) -> str:
+    def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 231, drop_last_row=False) -> str:
         """
         Set Symbol of the ticker and load the necessary data with the given timeframe to trade it
 
@@ -241,6 +241,7 @@ class Trader():
         df = df[["date", "open", "high", "low", "close", "volume"]]
 
         self.df = df
+        self.tf = tf
         self.symbol = symbol
         return df
     def get_current_tf_candle(self, tf):
