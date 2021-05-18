@@ -204,17 +204,20 @@ class Backtester:
         if self.tf != tf:
             start_datetime = df_th.set_index('tid').loc[tid, 'enter_date'] - pd.Timedelta((231 * tf) + adjust_left_view * tf, 'minutes')
             end_datetime = df_th.set_index('tid').loc[tid, 'exit_date'] + pd.Timedelta((adjust_right_view * tf), 'minutes')
-            trade_enter_datetime = df_th.set_index('tid').loc[tid, 'enter_date'] + pd.Timedelta(self.tf-1, 'minutes')
+            trade_enter_datetime = df_th.set_index('tid').loc[tid, 'enter_date'] + pd.Timedelta(self.tf-1 + self.tf*adjust_right_view, 'minutes')
 
-            # raise Exception(start_datetime, end_datetime)
+            # raise Exception(start_datetime, trade_enter_datetime, trade_enter_datetime_2)
             df = self.df.reset_index()
             trade_df = df[df['date'].between(start_datetime, end_datetime)].copy()
-            df_tf = self.loader._timeframe_setter(trade_df, tf)
+            df_tf = self.loader._timeframe_setter(trade_df, tf, drop_last_row=False).reset_index()
 
             if test_df:
                 pre_trade_df = df[df['date'].between(start_datetime, trade_enter_datetime)].copy()
-                pre_trade_df_tf = self.loader._timeframe_setter(pre_trade_df, tf, drop_last_row=False)
+                pre_trade_df_tf = self.loader._timeframe_setter(pre_trade_df, tf, drop_last_row=False).reset_index()
                 df_graph = self.illustrator.add_sma_to_df(pre_trade_df_tf).set_index('date')
+
+                self.new = pre_trade_df
+
                 if data_only:
                     return df_graph
                 return self.illustrator.graph_df(df_graph, flat=flat)
@@ -234,20 +237,43 @@ class Backtester:
             return self.illustrator.prepare_trade_graph_data(df_illus.set_index('tid'), df_tf, tid, data_only=False, flat=flat,
                                                      tf=tf, adjust_left_view=adjust_left_view, adjust_right_view=adjust_right_view)
 
-    def graph_benchmark(self, benchmark, enter_datetime, adjust_left_view, base_tf, space=50, flat=False, tf=None, exit_datetime=None):
-        print("Benchmark: BTCUSDT")
-        tf = base_tf if not tf else tf
-        enter_datetime = enter_datetime + pd.Timedelta(base_tf*2-1, 'minutes')
-        df_bench = benchmark.df[benchmark.df['date'] <= enter_datetime].tail((adjust_left_view + 231+2) * tf)
-        if exit_datetime:
-            exit_datetime += pd.Timedelta(15*base_tf, 'minutes')
-            trade_length = int((exit_datetime - enter_datetime).total_seconds()//(60*tf)) + 1
-            df_bench = benchmark.df[benchmark.df['date'] <= exit_datetime].tail((adjust_left_view + 231+trade_length) * tf)
-        df_bench_tf = benchmark.loader._timeframe_setter(df_bench, tf).reset_index().set_index('date')
-        self.illustrator.graph_df(df_bench_tf, flat=flat, space=space)
+    def graph_benchmark(self, object, enter_datetime, adjust_left_view, base_tf, adjust_right_view=0, space=50, flat=False, tf=None, exit_datetime=None):
 
-    def test_your_intuition(self, df_th, rule, limit=100, offset=0, adjust_left_view=200,
-                            show_answers=False, flat=True, benchmark=None, save=False):
+        print(f"Symbol: {object.symbol}")
+        tf = base_tf if not tf else tf
+
+        start_datetime = enter_datetime - pd.Timedelta((231 * tf) + adjust_left_view * tf, 'minutes')
+        trade_enter_datetime = enter_datetime + pd.Timedelta(base_tf - 1 + base_tf*adjust_right_view, 'minutes')
+        df_object = object.df[object.df['date'].between(start_datetime, trade_enter_datetime)].copy()
+        if exit_datetime:
+            exit_datetime += + pd.Timedelta(10*base_tf, 'minutes')
+            df_object = object.df[object.df['date'].between(start_datetime, exit_datetime)].copy()
+        df_object_tf = self.loader._timeframe_setter(df_object, tf, drop_last_row=False).reset_index()
+        self.illustrator.graph_df(df_object_tf, flat=flat, space=space)
+        return df_object_tf
+
+    def step_into_trade(self, df_graph, benchmark, adjust_left_view=50, flat=False, space=50):
+        self.test = df_graph
+        base_tf = df_graph['timeframe'].iloc[0]
+        enter_datetime = df_graph['date'].iloc[0]
+        clear_output(wait=True)
+        self.illustrator.graph_df(df_graph[:adjust_left_view+1], flat=flat, space=space)
+        self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, adjust_right_view=1, base_tf=base_tf)
+
+        while True:
+            clear_output(wait=True)
+            answer = input('Would you make this trade now? y/n: ')
+            if answer == 'y' or answer == 'n':
+                return answer
+            elif answer.isdigit():
+                self.illustrator.graph_df(df_graph[:adjust_left_view+int(answer)], flat=flat, space=space)
+                self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
+                                     adjust_right_view=int(answer), base_tf=base_tf)
+
+        return None
+
+    def test_your_intuition(self, df_th, rule, limit=100, offset=0, adjust_left_view=200, adjust_right_view=250, show_answers=False, flat=True,
+                            tids=None, benchmark=None, save=False, space=50):
         dic = {1: 'Rule 1', 2: 'Rule 2', 3: 'Rule 3'}
         df_th = df_th.set_index('tid')
         self.my_trades = []
@@ -255,47 +281,69 @@ class Backtester:
         base_tf = df_th['tf'].iloc[0]
 
         random.seed(1)
-        self.all_trades = list(df_th.index[offset:offset+limit])
-        random.shuffle(self.all_trades)
+        if not tids:
+            self.all_trades = list(df_th.index[offset:offset+limit])
+            random.shuffle(self.all_trades)
+            tids = self.all_trades
+        # self.all_trades = self.all_trades[offset:offset+limit]
 
-        for i, tid in enumerate(self.all_trades):
+        for i, tid in enumerate(tids):
             enter_datetime = self.df_th.set_index('tid')['enter_date'].loc[tid]
             exit_datetime = self.df_th.set_index('tid')['exit_date'].loc[tid]
             clear_output(wait=True)
             i += 1
-            print(f"Trade {i} of {limit} ")
-            df_graph = self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view, df_th=df_th.reset_index(),
-                                        data_only=True).reset_index()
-            self.illustrator.graph_df(df_graph[df_graph['date'] <= enter_datetime].set_index('date'), space=50, flat=flat)
+            shift = 0
+
+            print(f"Trade {i} of {len(tids)} ")
+            print(f"Trade id: {tid}")
+            df_graph = self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view,df_th=df_th.reset_index(),
+                                        adjust_right_view=adjust_right_view, data_only=True).reset_index()
+            self.illustrator.graph_df(df_graph[df_graph['date'] <= enter_datetime].set_index('date'), space=space, flat=flat)
 
             if type(benchmark) != type(None):
                 self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf)
 
             while True:
                 answer = input('Would you make this trade? y/n: ')
-                if answer == 'y':
+
+                if answer[:2] == '..' and len(answer) > 2:
+                    shift = int(answer[2:])
+                    adjusted_tf = adjusted_tf if adjusted_tf else df_graph['timeframe'].iloc[0]
+
+                    clear_output(wait=True)
+                    print(f'Answer: {shift}')
+                    print(f"Trade {i} of {len(tids)} ")
+                    print(f"Trade id: {tid}")
+
+                    df_graph = self.graph_benchmark(self, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
+                                             adjust_right_view=shift, base_tf=base_tf, tf=adjusted_tf)
+
+                    if type(benchmark) != type(None):
+                        self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
+                                             adjust_right_view=shift, base_tf=base_tf, tf=adjusted_tf)
+
+                elif answer == 'y':
                     self.my_trades.append(tid)
                     break
                 elif answer == 'n':
                     break
                 elif answer.isdigit():
+                    adjusted_tf = int(answer)
                     clear_output(wait=True)
-                    print(f"Trade {i} of {limit} ")
-                    df_graph_tf = self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view, df_th=df_th.reset_index(),
-                                                   test_df=True, tf=int(answer), data_only=True).reset_index()
+                    print(f'Answer: {shift}')
+                    print(f"Trade {i} of {len(tids)} ")
+                    print(f"Trade id: {tid}")
 
-                    if len(df_graph_tf) == 0:
+                    self.graph_benchmark(self, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
+                                         adjust_right_view=shift, base_tf=base_tf, tf=adjusted_tf)
+
+                    if len(df_graph) == 0:
                         clear_output(wait=True)
                         print('Not enough data to cover timeframe, returning to original timeframe.....')
-                        df_graph_tf = self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view,
-                                                       df_th=df_th.reset_index(), data_only=True).reset_index()
-
-                    df_graph_tf_predata = df_graph_tf[df_graph_tf['date'] <= enter_datetime + pd.Timedelta(base_tf-1, 'minutes')]
-                    self.illustrator.graph_df(df_graph_tf_predata, flat=flat, space=50)
 
                     if type(benchmark) != type(None):
-                        self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf, tf=int(answer))
-
+                        self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
+                                             adjust_right_view=shift, base_tf=base_tf, tf=adjusted_tf)
                 elif answer == 'saveoff':
                     save = False
                 elif answer == 'saveon':
@@ -305,8 +353,9 @@ class Backtester:
                     continue
             if show_answers:
                 clear_output(wait=True)
-                print(f"Trade {i} of {limit} ")
-                self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view, test_df=True, df_th=df_th.reset_index(), data_only=False)
+                print(f"Trade {i} of {len(tids)} ")
+                print(f"Trade id: {tid}")
+                self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view, test_df=True, df_th=df_th.reset_index(), flat=flat, data_only=False)
 
                 if type(benchmark) != type(None):
                     self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf, space=0, exit_datetime=exit_datetime)
@@ -320,6 +369,7 @@ class Backtester:
 
         if save:
             symbol = df_th['symbol'].iloc[0]
+            self.all_trades = sorted(self.all_trades)
             first_tid = self.all_trades[0]
             last_tid = self.all_trades[-1]
             if type(benchmark) == type(None):
@@ -459,23 +509,30 @@ class Backtester:
         volatility_index = analyzer.candle_volatility_index
         trade_index      = analyzer.trade_index
 
-        profit_rate      = analyzer.get_profit_rate(candle_index, mean=True)
-        loss_rate        = analyzer.get_loss_rate(candle_index, mean=True)
-        peak_profit_rate = analyzer.get_peak_profit_rate(candle_index, peak_index, mean=True)
-        peak_loss_rate   = analyzer.get_peak_loss_rate(candle_index, peak_index, mean=True)
-        pps_rate         = analyzer.get_pps_rate(pps_index, median=True)
-        peak_pps_rate    = analyzer.get_peak_pps_rate(pps_index, peak_index, mean=True)
-        volatility_rate  = analyzer.get_volatility_rate(volatility_index, median=True)
-        volume_rate      = analyzer.get_volume_rate(volume_index, median=True)
-        peak_volume_rate = analyzer.get_peak_volume_rate(volume_index, peak_index, mean=True)
+        profit_trade_index = trade_index[trade_index['profitability'] > 1]
+        profit_candle_index = profit_trade_index[[]].merge(candle_index.reset_index(), on='tid').set_index(['tid', 'candle_id'])
+        profit_volume_index = profit_trade_index[[]].merge(volume_index.reset_index(), on='tid').set_index(['tid', 'candle_id'])
+        profit_volatility_index = profit_trade_index[[]].merge(volatility_index.reset_index(), on='tid').set_index(['tid', 'candle_id'])
+        profit_pps_index = profit_trade_index[[]].merge(pps_index.reset_index(), on='tid').set_index(['tid', 'candle_id'])
+        profit_peak_index = profit_trade_index[[]].merge(peak_index.reset_index(), on='tid').set_index(['tid'])
 
-        num_candles_to_peak    = analyzer.get_num_candles_to_peak(candle_index, peak_index, median=True)
-        peak_unrealized_profit = analyzer.get_peak_unrealized_profit(trade_index, peak_index, 0.9996, median=True)
-        peak_unrealized_loss   = analyzer.get_peak_unrealized_loss(trade_index, peak_index, 0.9996, median=True)
-        volume                 = analyzer.get_volume(volume_index, median=True)
-        peak_volume            = analyzer.get_peak_volume(volume_index, peak_index, median=True)
+        profit_rate      = analyzer.get_profit_rate(profit_candle_index, mean=True)
+        loss_rate        = analyzer.get_loss_rate(profit_candle_index, mean=True)
+        peak_profit_rate = analyzer.get_peak_profit_rate(profit_candle_index, profit_peak_index, mean=True)
+        peak_loss_rate   = analyzer.get_peak_loss_rate(profit_candle_index, profit_peak_index, mean=True)
+        pps_rate         = analyzer.get_pps_rate(profit_pps_index, median=True)
+        peak_pps_rate    = analyzer.get_peak_pps_rate(profit_pps_index, profit_peak_index, mean=True)
+        volatility_rate  = analyzer.get_volatility_rate(profit_volatility_index, median=True)
+        volume_rate      = analyzer.get_volume_rate(profit_volume_index, median=True)
+        peak_volume_rate = analyzer.get_peak_volume_rate(profit_volume_index, profit_peak_index, mean=True)
+
+        num_candles_to_peak    = analyzer.get_num_candles_to_peak(profit_candle_index, profit_peak_index, median=True)
+        peak_unrealized_profit = analyzer.get_peak_unrealized_profit(profit_trade_index, profit_peak_index, 0.9996, median=True)
+        peak_unrealized_loss   = analyzer.get_peak_unrealized_loss(profit_trade_index, profit_peak_index, 0.9996, median=True)
+        volume                 = analyzer.get_volume(profit_volume_index, median=True)
+        peak_volume            = analyzer.get_peak_volume(profit_volume_index, profit_peak_index, median=True)
+
         profitability          = analyzer.calculate_profitability(trade_index, median=True)
-
         largest_profit  = analyzer.get_largest_profit(trade_index)
         largest_loss    = analyzer.get_largest_loss(trade_index)
         gross_profit    = analyzer.get_gross_profit(trade_index)
@@ -487,8 +544,8 @@ class Backtester:
         average_loss    = analyzer.get_average_loss(gross_loss, num_trades_lost)
 
 
-        peak_unrealized_profit_index = analyzer.get_peak_unrealized_profit(trade_index, peak_index, 0.9996, median=False)['peak_profit']
-        peak_unrealized_loss_index   = analyzer.get_peak_unrealized_loss(trade_index, peak_index, 0.9996, median=False)['peak_loss']
+        peak_unrealized_profit_index = analyzer.get_peak_unrealized_profit(profit_trade_index, profit_peak_index, 0.9996, median=False)['peak_profit']
+        peak_unrealized_loss_index   = analyzer.get_peak_unrealized_loss(profit_trade_index, profit_peak_index, 0.9996, median=False)['peak_loss']
         unrealized_rrr               = analyzer.get_unrealized_rrr(peak_unrealized_profit_index, peak_unrealized_loss_index)
         average_rrr                  = analyzer.get_average_rrr(average_win, average_loss)
         amount_of_data               = analyzer.get_amount_of_data(trade_index)
