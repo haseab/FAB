@@ -33,16 +33,22 @@ class TradeExecutor:
     def __init__(self):
         self.live_trade_history = TradeHistory()
         self.trade_journal = pd.DataFrame()
+        self.dic = {"BUY": "Long", "SELL": "Short"}
+        self.inverse_dic = dict((y, x) for x,y in self.dic.items())
         self.latest_trade_info = None
         self.latest_trade = None
-        self.loader = _DataLoader()
+        self.loader = _DataLoader(db=False)
 
     @staticmethod
-    def how_much_to_buy(current_balance, leverage, last_price: str) -> float:
+    def how_much_to_buy(current_balance, leverage, last_price: str, precision) -> float:
         """Formula that calculates the position size"""
-        return round(Helper.sig_fig(current_balance * leverage / float(last_price), 4), 3)
+        print(current_balance, leverage, last_price)
+        significant = Helper.sig_fig(current_balance * leverage / float(last_price), 4)
+        if significant.is_integer():
+            return int(significant)
+        return round(significant, precision)
 
-    def enter_market(self, client, symbol: str, side: str, capital, leverage, rule_no: int) -> list:
+    def enter_market(self, client, symbol_side_pair, capital, leverage=0.001) -> list:
         """
         Creates a order in the exchange, given the symbol
 
@@ -76,37 +82,29 @@ class TradeExecutor:
                  'time': 1609197914670,
                  'updateTime': 1609197914825}
         """
-        last_price = self.loader._get_binance_futures_candles("BTCUSDT", 2).iloc[-1, 3]
+
         #         assert self.how_much_to_buy(last_price) <= self.capital*leverage/last_price + 1
+        df_trade_info = pd.DataFrame()
+        futures_info = client.futures_exchange_info()
+        # symbols = trade_metrics.index.unique(level=0)
+        # sides = [i[1] for i in trade_metrics['signal']]
 
-        enter_market_params = {
-            'symbol': symbol,
-            'side': side,
-            'type': 'MARKET',
-            # Note the varaibles here self.captial and self.leverage originate from Trader class
-            'quantity': self.how_much_to_buy(capital, leverage, last_price)
-        }
+        for symbol, side in symbol_side_pair:
+            precision = [dic["quantityPrecision"] for dic in futures_info['symbols'] if dic['symbol'] == symbol][0]
+            last_price = self.loader._get_binance_futures_candles(symbol, 2).iloc[-1, 3]
+            enter_market_params = {
+                'symbol': symbol,
+                'side': self.inverse_dic[side],
+                'type': 'MARKET',
+                'quantity': self.how_much_to_buy(capital//len(symbol_side_pair), leverage, last_price, precision)
+            }
+            print(enter_market_params['quantity'])
+            latest_trade = client.futures_create_order(**enter_market_params)
+            trade_info = client.futures_get_order(symbol=symbol, orderId=latest_trade["orderId"])
+            df_trade_info = df_trade_info.append(pd.DataFrame([trade_info.values()], columns=trade_info.keys()), ignore_index=True)
+        return df_trade_info
 
-        # Creating order to the exchange
-        self.latest_trade = client.futures_create_order(**enter_market_params)
-        self.latest_trade_info = client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
-
-        # Getting Datetime of trade
-        date = str(datetime.fromtimestamp(self.latest_trade_info['time'] / 1000))[:19]
-
-        # Creating dictionary to convert "BUY" to "Long", for the sake of maintaining trade_history form.
-        dic = {"BUY": "Long", "SELL": "Short"}
-
-        # Note: trade_history takes the form [LONG/SHORT, ENTER/EXIT, DATETIME, PRICE, RULE #]
-        self.live_trade_history.append(
-            Trade([dic[side], "Enter", date, self.latest_trade_info['avgPrice'][:8], f"Rule {rule_no}"]))
-
-        # Adding Raw order data to a separate list
-        self.trade_journal = self.trade_journal.append([self.latest_trade_info])
-
-        return self.latest_trade_info
-
-    def exit_market(self, client, symbol: str, rule_no: int, position_amount: float) -> list:
+    def exit_market(self, client, positions: dict) -> list:
         """
         Considers the current position you have for a given symbol, and closes it accordingly
 
@@ -117,34 +115,22 @@ class TradeExecutor:
 
         Returns: dict     Ex. see "enter_market" description
         """
-        # Determines whether currently long or short, and it takes the other side (in order to close it)
-        side = "BUY" if position_amount < 0 else "SELL"
+        df_trade_info = pd.DataFrame()
+        for symbol, position_amount in positions.items():
+            side = "BUY" if position_amount < 0 else "SELL"
 
-        exitMarketParams = {
-            'symbol': symbol,
-            'side': side,
-            'type': 'MARKET',
-            'quantity': abs(position_amount)
-        }
+            exitMarketParams = {
+                'symbol': symbol,
+                'side': side,
+                'type': 'MARKET',
+                'quantity': abs(position_amount)
+            }
 
-        # Creating order to the exchange
-        self.latest_trade = client.futures_create_order(**exitMarketParams)
-        self.latest_trade_info = client.futures_get_order(symbol=symbol, orderId=self.latest_trade["orderId"])
-
-        # Getting the date of the trade
-        date = str(datetime.fromtimestamp(self.latest_trade_info['time'] / 1000))[:19]
-
-        # Creating dictionary for the sake of maintaining trade_history form (since its a Short Exit, not a Buy Exit)
-        dic = {"BUY": "Short", "SELL": "Long"}
-
-        # Trade history list takes the form [LONG/SHORT, ENTER/EXIT, DATETIME, PRICE, RULE #]
-        self.live_trade_history.append(
-            Trade([dic[side], "Exit", date, self.latest_trade_info['avgPrice'][:8], f"Rule {rule_no}"]))
-
-        # Adding Raw order data to a separate list
-        self.trade_journal = self.trade_journal.append([self.latest_trade_info])
-
-        return self.latest_trade_info
+            print(exitMarketParams['quantity'])
+            latest_trade = client.futures_create_order(**exitMarketParams)
+            trade_info = client.futures_get_order(symbol=symbol, orderId=latest_trade["orderId"])
+            df_trade_info = df_trade_info.append(pd.DataFrame([trade_info.values()], columns=trade_info.keys()), ignore_index=True)
+        return df_trade_info
 
     def stop_market(self, client, symbol: str, price: float, position_amount: float) -> list:
         """
