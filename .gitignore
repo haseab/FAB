@@ -2,6 +2,8 @@
 binance_api.txt
 FAB 4.0.ipynb
 local
+*.csv
+*.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
