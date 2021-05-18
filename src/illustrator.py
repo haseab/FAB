@@ -41,8 +41,8 @@ class Illustrator:
             ma_blue = mpf.make_addplot(df_graph['blue'], color='#001aff', width=2.0)
             ma_black = mpf.make_addplot(df_graph['black'], color='#000000', width=2.0)
             ma_light_blue = mpf.make_addplot(df_graph['light blue'], color="#8cf5ff", width=2.0)
-            # ma_red = mpf.make_addplot(df_graph['red'], color='red', width=2.0)
-            addplot = [ma_green, ma_orange, ma_blue, ma_black, ma_light_blue]
+            ma_red = mpf.make_addplot(df_graph['red'], color='red', width=2.0)
+            addplot = [ma_green, ma_orange, ma_blue, ma_black, ma_light_blue, ma_red]
         return df_graph, addplot
 
     def add_sma_to_df(self, df):
@@ -54,7 +54,7 @@ class Illustrator:
         df['blue'] = self.strategy.blue
         df['black'] = self.strategy.black
         df['light blue'] = self.strategy.light_blue
-        # df['red'] = self.strategy.red
+        df['red'] = self.strategy.red
 
         return df[231:]
 
@@ -75,7 +75,10 @@ class Illustrator:
         pre_data = df_tf_candles[date_column.between(adjusted_pre_data_start_datetime, adjusted_pre_data_end_datetime)].copy().reset_index().set_index('date')
         post_data = df_tf_candles[date_column.between(adjusted_post_data_start_datetime, adjusted_post_data_end_datetime)].copy().reset_index().set_index('date')
 
+        if df_tf_candles[date_column.between(start_datetime, end_datetime)]['date'].iloc[-1] < end_datetime:
+            end_datetime += pd.Timedelta(1 * tf, 'minutes')
         trade_data = df_tf_candles[date_column.between(start_datetime, end_datetime)].copy().reset_index().set_index('date')
+
         trade_data['pnl_line'] = np.linspace(enter_price, exit_price, len(trade_data))
         illus_data = pre_data.append(trade_data.append(post_data))
 

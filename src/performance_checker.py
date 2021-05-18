@@ -102,7 +102,9 @@ class PerformanceChecker:
             return None
         else:
             while True:
-                time.sleep(3600)
+                time.sleep(5)
+                time.sleep(5)
+                time.sleep(3590)
                 clear_output(wait=True)
                 self.update_progress(additional_balance, commit=True)
 

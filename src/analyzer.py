@@ -49,12 +49,6 @@ class Analyzer:
         self.candle_volume_index = None
         self.candle_pps_index = None
 
-    def calculate_short_profitability(self, enter_price, exit_price, commission):
-        return (commission ** 2) * (2 - exit_price / enter_price)
-
-    def calculate_long_profitability(self, enter_price, exit_price, commission):
-        return (commission ** 2) * (exit_price / enter_price)
-
     def calculate_longest_run(self, trade_index: pd.DataFrame) -> (float, int):
         """
         Takes a list of floats (e.g. [1.05, 0.98, 1.11, 1.01, 0.78] and
@@ -134,7 +128,7 @@ class Analyzer:
             side = subset_df.loc[first_index, 'side']
             enter_trade = subset_df.loc[first_index, 'enter_price']
             exit_trade = subset_df.loc[last_index, 'exit_price']
-            profitability = self.calculate_long_profitability(enter_trade, exit_trade, commission)
+            profitability = Helper.calculate_long_profitability(enter_trade, exit_trade, commission)
             trade_long_index = trade_long_index.append(pd.DataFrame([[tid, side, first_index, enter_trade, last_index,
                     exit_trade, round(profitability, 5)]], columns=['tid', 'side', "enter_id", "enter_trade",
                                                                     "exit_id", "exit_trade", "profitability"]))
@@ -171,7 +165,7 @@ class Analyzer:
             side = subset_df.loc[first_index, 'side']
             enter_trade = subset_df.loc[first_index, 'enter_price']
             exit_trade = subset_df.loc[last_index, 'exit_price']
-            profitability = self.calculate_short_profitability(enter_trade, exit_trade, commission)
+            profitability = Helper.calculate_short_profitability(enter_trade, exit_trade, commission)
             trade_short_index = trade_short_index.append(pd.DataFrame([[tid, side, first_index, enter_trade, last_index,
                     exit_trade, round(profitability, 5)]], columns=['tid', "side", "enter_id", "enter_trade",
                                                                     "exit_id", "exit_trade", "profitability"]))
@@ -330,17 +324,17 @@ class Analyzer:
         return medians
 
     def get_num_candles_to_peak(self, candle_index, peak_index, median=True):
-        means = pd.Series()
+        means = pd.DataFrame(columns=['tid', 'num_candles'])
         for tid in candle_index.index.unique('tid'):
             subset_df = candle_index.loc[tid, :]
             subset_max = subset_df[subset_df.index <= peak_index.loc[tid, 'peak_id']]
-            means = means.append(pd.Series(len(subset_max)))
+            means = means.append(pd.DataFrame([[tid, len(subset_max)]], columns=['tid', 'num_candles']))
         if median:
-            return means.median()
-        return means
+            return means['num_candles'].median()
+        return means.set_index('tid')
 
     def get_peak_unrealized_profit(self, trade_index, peak_index, commission, median=True):
-        means = pd.DataFrame()
+        means = pd.DataFrame(columns=["tid", 'pnl', 'peak_profit'])
         unrealized = None
         for tid in trade_index.index.unique('tid'):
             if trade_index.loc[tid, 'side'] == "Long":
@@ -353,7 +347,7 @@ class Analyzer:
         return means.reset_index(drop=True)
 
     def get_peak_unrealized_loss(self, trade_index, peak_index, commission, median=True):
-        means = pd.DataFrame()
+        means = pd.DataFrame(columns=["tid", 'pnl', 'peak_loss'])
         unrealized = None
         for tid in trade_index.index.unique('tid'):
             if trade_index.loc[tid, 'side'] == "Long":

@@ -13,6 +13,13 @@ class Helper:
     def sig_fig(x: float, sig: int = 2) -> float:
         """ Rounds to the number of significant digits indicated"""
         return round(x, sig - math.ceil(math.log10(abs(x))))
+    @staticmethod
+    def calculate_short_profitability(enter_price, exit_price, commission):
+        return (commission ** 2) * (2 - exit_price / enter_price)
+
+    @staticmethod
+    def calculate_long_profitability(enter_price, exit_price, commission):
+        return (commission ** 2) * (exit_price / enter_price)
 
     @staticmethod
     def factor_to_percentage(list_of_factors):

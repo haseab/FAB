@@ -31,8 +31,6 @@ class _DataLoader:
         if db:
             self.sql = SqlMapper()
             self.conn = self.sql.connect_psql()
-        # with open("fab_engine.txt", 'r') as file:
-        #     self.engine = sqlalchemy.create_engine(file.readline())
 
     def _load_csv_v2(self, csv_url):
         tf = csv_url.split(' ')[2][:-1]

@@ -120,7 +120,6 @@ class SqlMapper:
         string_list.append(");")
         string = "".join(string_list)
 
-
         cursor.execute(string)
         self.conn.commit()
         return string
