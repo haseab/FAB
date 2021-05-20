@@ -11,6 +11,7 @@ import numpy as np
 from functools import reduce
 import random
 import time
+from threading import Thread
 from IPython.display import display, clear_output
 import os
 
@@ -237,48 +238,60 @@ class Backtester:
             return self.illustrator.prepare_trade_graph_data(df_illus.set_index('tid'), df_tf, tid, data_only=False, flat=flat,
                                                      tf=tf, adjust_left_view=adjust_left_view, adjust_right_view=adjust_right_view)
 
-    def graph_benchmark(self, object, enter_datetime, adjust_left_view, base_tf, adjust_right_view=0, space=50, flat=False, tf=None, exit_datetime=None):
-
-        print(f"Symbol: {object.symbol}")
+    def graph_benchmark(self, object, enter_datetime, adjust_left_view, base_tf, adjust_right_view=0, space=50,
+                        description=True, flat=False, tf=None, exit_datetime=None):
+        if description:
+            print(f"Symbol: {object.symbol}")
         tf = base_tf if not tf else tf
 
         start_datetime = enter_datetime - pd.Timedelta((231 * tf) + adjust_left_view * tf, 'minutes')
-        trade_enter_datetime = enter_datetime + pd.Timedelta(base_tf - 1 + base_tf*adjust_right_view, 'minutes')
+        trade_enter_datetime = enter_datetime + pd.Timedelta(base_tf - 1 + adjust_right_view, 'minutes')
         df_object = object.df[object.df['date'].between(start_datetime, trade_enter_datetime)].copy()
         if exit_datetime:
             exit_datetime += + pd.Timedelta(10*base_tf, 'minutes')
             df_object = object.df[object.df['date'].between(start_datetime, exit_datetime)].copy()
         df_object_tf = self.loader._timeframe_setter(df_object, tf, drop_last_row=False).reset_index()
+
+        if len(df_object_tf) < 231:
+            clear_output(wait=True)
+            print('Not enough data to cover timeframe, returning to original timeframe.....')
+            df_object_tf = self.graph_benchmark(self, enter_datetime, adjust_left_view, base_tf, adjust_right_view, space, flat)
+            return df_object_tf
+
         self.illustrator.graph_df(df_object_tf, flat=flat, space=space)
         return df_object_tf
 
-    def step_into_trade(self, df_graph, benchmark, adjust_left_view=50, flat=False, space=50):
-        self.test = df_graph
-        base_tf = df_graph['timeframe'].iloc[0]
-        enter_datetime = df_graph['date'].iloc[0]
-        clear_output(wait=True)
-        self.illustrator.graph_df(df_graph[:adjust_left_view+1], flat=flat, space=space)
-        self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, adjust_right_view=1, base_tf=base_tf)
-
+    def continuously_update(self, input, refresh_rate):
         while True:
-            clear_output(wait=True)
-            answer = input('Would you make this trade now? y/n: ')
-            if answer == 'y' or answer == 'n':
-                return answer
-            elif answer.isdigit():
-                self.illustrator.graph_df(df_graph[:adjust_left_view+int(answer)], flat=flat, space=space)
-                self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
-                                     adjust_right_view=int(answer), base_tf=base_tf)
+            time.sleep(refresh_rate)
+            df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
+                                                            enter_datetime, flat, i, shift, tid, tids)
+            # if input in ['s', 'stop', 'STOP', 'S']:
+            #     return
 
-        return None
+    def test_intuition_output(self, adjust_left_view, adjusted_tf, base_tf, benchmark, enter_datetime, flat,
+                              i, shift, tid, tids, descriptions=True):
+        df_bench = None
+        clear_output(wait=True)
+        if descriptions:
+            print(f'Answer: {shift}')
+            print(f"Trade {i} of {len(tids)} ")
+            print(f"Trade id: {tid}")
+        df_graph = self.graph_benchmark(self, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
+                                        adjust_right_view=shift, base_tf=base_tf, description=descriptions, tf=adjusted_tf)
+        if type(benchmark) != type(None):
+            df_bench = self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
+                                 adjust_right_view=shift, base_tf=base_tf, description= descriptions, tf=adjusted_tf)
+        return df_graph, df_bench
 
     def test_your_intuition(self, df_th, rule, limit=100, offset=0, adjust_left_view=200, adjust_right_view=250, show_answers=False, flat=True,
-                            tids=None, benchmark=None, save=False, space=50):
+                            tids=None, benchmark=None, refresh_rate=0.1, skip_rate=1, save=False, space=50):
         dic = {1: 'Rule 1', 2: 'Rule 2', 3: 'Rule 3'}
         df_th = df_th.set_index('tid')
         self.my_trades = []
         df_th = df_th[df_th['rule'] == dic[rule]]
         base_tf = df_th['tf'].iloc[0]
+        adjusted_tf = None
 
         random.seed(1)
         if not tids:
@@ -306,44 +319,39 @@ class Backtester:
             while True:
                 answer = input('Would you make this trade? y/n: ')
 
-                if answer[:2] == '..' and len(answer) > 2:
+                if answer == '..':
+                    count = 0
+                    adjusted_tf = adjusted_tf if adjusted_tf else df_graph['timeframe'].iloc[0]
+                    while True:
+                        count += skip_rate
+                        time.sleep(refresh_rate)
+                        df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
+                                                                        enter_datetime, flat, i, count, tid, tids, False)
+
+                elif answer[:2] == '..' and len(answer) > 2:
                     shift = int(answer[2:])
                     adjusted_tf = adjusted_tf if adjusted_tf else df_graph['timeframe'].iloc[0]
 
-                    clear_output(wait=True)
-                    print(f'Answer: {shift}')
-                    print(f"Trade {i} of {len(tids)} ")
-                    print(f"Trade id: {tid}")
-
-                    df_graph = self.graph_benchmark(self, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
-                                             adjust_right_view=shift, base_tf=base_tf, tf=adjusted_tf)
-
-                    if type(benchmark) != type(None):
-                        self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
-                                             adjust_right_view=shift, base_tf=base_tf, tf=adjusted_tf)
-
+                    df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
+                                                          enter_datetime, flat, i, shift, tid, tids)
+                elif answer[:1] == 'n' and len(answer) > 1:
+                    if not answer[1:]:
+                        shift += base_tf
+                    elif answer[1:].strip('-').isdigit():
+                        shift += int(answer[1:])
+                    df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
+                                                          enter_datetime, flat, i, shift, tid, tids)
                 elif answer == 'y':
                     self.my_trades.append(tid)
                     break
                 elif answer == 'n':
                     break
-                elif answer.isdigit():
+                elif answer.isdigit() and int(answer) < 1500:
                     adjusted_tf = int(answer)
-                    clear_output(wait=True)
-                    print(f'Answer: {shift}')
-                    print(f"Trade {i} of {len(tids)} ")
-                    print(f"Trade id: {tid}")
 
-                    self.graph_benchmark(self, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
-                                         adjust_right_view=shift, base_tf=base_tf, tf=adjusted_tf)
+                    df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
+                                                          enter_datetime, flat, i, shift, tid, tids)
 
-                    if len(df_graph) == 0:
-                        clear_output(wait=True)
-                        print('Not enough data to cover timeframe, returning to original timeframe.....')
-
-                    if type(benchmark) != type(None):
-                        self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
-                                             adjust_right_view=shift, base_tf=base_tf, tf=adjusted_tf)
                 elif answer == 'saveoff':
                     save = False
                 elif answer == 'saveon':
@@ -381,7 +389,6 @@ class Backtester:
         actual_profitability = self.trade_disparity[self.trade_disparity['my trades']]['profitability'].product()
 
         return theoretical_profitability, actual_profitability
-
 
     def calculate_trading_history(self, df_tf: pd.DataFrame=None, strategy: FabStrategy=None) -> str:
         """
