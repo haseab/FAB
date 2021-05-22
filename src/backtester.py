@@ -154,7 +154,12 @@ class Backtester:
                 and self.trade_history.last_trade().status == "Enter":
             self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i+1], strategy.price[i], "Rule 1"]))
 
-    def check_rule_2(self, strategy, i, list_of_str_dates):
+    def check_rule_2(self, strategy, i, list_of_str_dates, v2=False):
+
+        if v2:
+            strategy.rule_2_short_enter = strategy.rule_2_short_enter_v2
+            strategy.rule_2_buy_enter = strategy.rule_2_buy_enter_v2
+
         if strategy.rule_2_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
             self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.black[i]*(1+strategy.allowance), "Rule 2"]))
 
@@ -251,8 +256,8 @@ class Backtester:
             exit_datetime += + pd.Timedelta(10*base_tf, 'minutes')
             df_object = object.df[object.df['date'].between(start_datetime, exit_datetime)].copy()
         df_object_tf = self.loader._timeframe_setter(df_object, tf, drop_last_row=False).reset_index()
-
-        if len(df_object_tf) < 231:
+        # print(df_object_tf)
+        if len(df_object_tf) < 280:
             clear_output(wait=True)
             print('Not enough data to cover timeframe, returning to original timeframe.....')
             df_object_tf = self.graph_benchmark(self, enter_datetime, adjust_left_view, base_tf, adjust_right_view, space, flat)
@@ -261,13 +266,13 @@ class Backtester:
         self.illustrator.graph_df(df_object_tf, flat=flat, space=space)
         return df_object_tf
 
-    def continuously_update(self, input, refresh_rate):
-        while True:
-            time.sleep(refresh_rate)
-            df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
-                                                            enter_datetime, flat, i, shift, tid, tids)
-            # if input in ['s', 'stop', 'STOP', 'S']:
-            #     return
+    # def continuously_update(self, input, refresh_rate):
+    #     while True:
+    #         time.sleep(refresh_rate)
+    #         df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
+    #                                                         enter_datetime, flat, i, shift, tid, tids)
+    #         # if input in ['s', 'stop', 'STOP', 'S']:
+    #         #     return
 
     def test_intuition_output(self, adjust_left_view, adjusted_tf, base_tf, benchmark, enter_datetime, flat,
                               i, shift, tid, tids, descriptions=True):
@@ -371,15 +376,16 @@ class Backtester:
                 input('Press any key to continue... ')
 
         self.trade_disparity = pd.DataFrame()
-        self.trade_disparity['tid'] = self.all_trades
+        self.trade_disparity['tid'] = tids
         self.trade_disparity['my trades'] = [True if tid in self.my_trades else False for tid in self.trade_disparity['tid']]
         self.trade_disparity = self.trade_disparity.merge(self.analyzer.trade_index[['profitability']], on='tid')
 
         if save:
             symbol = df_th['symbol'].iloc[0]
-            self.all_trades = sorted(self.all_trades)
-            first_tid = self.all_trades[0]
-            last_tid = self.all_trades[-1]
+            tids = sorted(tids)
+            self.all_trades = tids
+            first_tid = tids[0]
+            last_tid = tids[-1]
             if type(benchmark) == type(None):
                 self.trade_disparity.to_csv(f'Intuition test {symbol} {base_tf}m, Rule #{rule}, tids {first_tid}-{last_tid}.csv', index=False)
             else:
@@ -390,7 +396,7 @@ class Backtester:
 
         return theoretical_profitability, actual_profitability
 
-    def calculate_trading_history(self, df_tf: pd.DataFrame=None, strategy: FabStrategy=None) -> str:
+    def calculate_trading_history(self, df_tf: pd.DataFrame=None, strategy: FabStrategy=None, v2=False) -> str:
         """
         Tests the asset in history, with respect to the rules outlined in the FabStrategy class.
         It adds applicable trades to a list and then an Analyzer object summarizes the profitability
@@ -412,11 +418,10 @@ class Backtester:
         # Creating necessary moving averages from FabStrategy class
         strategy.load_data(df_tf)
         strategy.update_moving_averages()
-
         # Iterating through every single data point and checking if rules apply.
         for row_index in range(231, len(df_tf) - 1):
             self.check_rule_1(strategy, row_index, list_of_str_dates)
-            self.check_rule_2(strategy, row_index, list_of_str_dates)
+            self.check_rule_2(strategy, row_index, list_of_str_dates, v2=v2)
             self.check_rule_3(strategy, row_index, list_of_str_dates)
 
         return self.trade_history
@@ -440,6 +445,7 @@ class Backtester:
             enter_price = self.trade_history[i - 1].price
             exit_price = self.trade_history[i].price
             candles = int((np.datetime64(exit_date) - np.datetime64(enter_date)) / np.timedelta64(1, 'm')) + 1
+            candles = int(candles//tf) + 1
 
             row = pd.DataFrame(
                 [[tid, enter_date, exit_date, strategy, rule, side, symbol, tf, enter_price, exit_price, candles]],
@@ -572,11 +578,11 @@ class Backtester:
         self.df_metrics = df_metrics.set_index(['symbol', 'tf', 'rule_no.'])
         return self.df_metrics
 
-    def start_backtesting(self, tf=None):
+    def start_backtesting(self, tf=None, v2=False):
         tf = self.tf if not tf else tf
         self.set_timeframe(tf)
         self.df_tf = self.load_timeframe_data()
-        self.calculate_trading_history()
+        self.calculate_trading_history(v2=v2)
         self.df_th = self.create_trade_history_table()
         self.detailed_th = self.generate_detailed_trading_history(self.df).set_index(['tid', 'candle_id'])
         # self.df_th = self.add_metrics_to_trading_history(self.df_th)
