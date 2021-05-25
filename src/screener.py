@@ -18,11 +18,15 @@ class Screener:
         self.master_screener = pd.DataFrame()
         self.strategy = FabStrategy()
 
-    def check_for_signals(self, df, strategy, enter=False, exit=False, max_candle_history=10):
+    def check_for_signals(self, df, strategy, enter=False, exit=False, max_candle_history=10, v2=False):
         if enter and exit:
             raise Exception("Both Enter and Exit Signals were requested. Choose only one")
         if not enter and not exit:
             enter = True
+
+        if v2:
+            strategy.rule_2_buy_enter = strategy.rule_2_buy_enter_v2
+            strategy.rule_2_short_enter = strategy.rule_2_short_enter_v2
 
         strategy.load_data(df)
         strategy.update_moving_averages()
@@ -66,13 +70,13 @@ class Screener:
                         return True, x_last_row, rule, side
         return False, None, None, None
 
-    def screen(self, trader, metrics_table, max_requests=250, max_candle_history=10):
+    def screen(self, trader, metrics_table, max_requests=250, max_candle_history=10, max_candles_needed=231, v2=False):
         metrics_table = metrics_table[:]
         symbols = pd.DataFrame(metrics_table.index.unique(level=0), columns=['symbol'])
         tfs = pd.DataFrame(metrics_table.index.unique(level=1), columns=['tf'])
         tfs = tfs.set_index('tf').drop([3, 7, 21, 60, 77, 240]).reset_index()
         df_symbol_tf = symbols.merge(tfs, how='cross')
-        max_candles_needed = 231 + max_candle_history + 1
+        max_candles_needed = max_candles_needed + max_candle_history + 1
 
         # return df_symbol_tf
         partial_screener = pd.DataFrame(columns=['date', 'signal', 'how recent', 'metric_id'])
@@ -95,7 +99,7 @@ class Screener:
 
         for df_future, symbol, tf in zip(results, df_symbol_tf['symbol'], df_symbol_tf['tf']):
             df = df_future.result()
-            signal, x_many_candles_ago, rule, side = self.check_for_signals(df, self.strategy, max_candle_history=10, enter=True)
+            signal, x_many_candles_ago, rule, side = self.check_for_signals(df, self.strategy, max_candle_history=10, v2=v2, enter=True)
 
             if signal:
                 # tf = int((df['date'].iloc[1]-df['date'].iloc[0]).total_seconds()/60)
