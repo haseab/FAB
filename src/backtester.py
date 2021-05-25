@@ -155,7 +155,6 @@ class Backtester:
             self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i+1], strategy.price[i], "Rule 1"]))
 
     def check_rule_2(self, strategy, i, list_of_str_dates, v2=False):
-
         if v2:
             strategy.rule_2_short_enter = strategy.rule_2_short_enter_v2
             strategy.rule_2_buy_enter = strategy.rule_2_buy_enter_v2
@@ -373,7 +372,16 @@ class Backtester:
                 if type(benchmark) != type(None):
                     self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf, space=0, exit_datetime=exit_datetime)
 
-                input('Press any key to continue... ')
+                while True:
+                    resp = input('Press c to continue... ')
+
+                    if resp.isdigit() and int(resp)<1500:
+                        adjusted_tf = int(resp)
+                        clear_output(wait=True)
+                        self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view, test_df=False, tf=adjusted_tf, df_th=df_th.reset_index(), flat=flat, data_only=False)
+
+                    elif resp == 'c' or ' ':
+                        break
 
         self.trade_disparity = pd.DataFrame()
         self.trade_disparity['tid'] = tids
