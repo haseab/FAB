@@ -22,6 +22,18 @@ class Helper:
         return (commission ** 2) * (exit_price / enter_price)
 
     @staticmethod
+    def sleep_for(seconds, partition=20):
+        print(f"Sleeping {seconds} seconds...")
+        for i in range(partition):
+            time.sleep(seconds / partition)
+
+    @staticmethod
+    def current_minute_datetime():
+        now = datetime.now()
+        now = datetime(year=now.year, month=now.month, day=now.day, hour=now.hour, minute=now.minute)
+        return now
+
+    @staticmethod
     def factor_to_percentage(list_of_factors):
         list_of_percentages = []
         for factor in list_of_factors:
@@ -31,6 +43,10 @@ class Helper:
                 list_of_percentages.append(round((factor - 1) * 100, 4))
 
         return list_of_percentages
+
+    @staticmethod
+    def slope(series, i):
+        return (series[i]-series[i-4]) / 4
 
     @staticmethod
     def max_index(index_list):
