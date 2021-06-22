@@ -190,7 +190,7 @@ class Backtester:
             self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i+1], strategy.price[i], "Rule 3"]))
 
     def graph_trade(self, tid=None, index=None, rule=None, adjust_left_view=150, adjust_right_view=10, df_th=None,
-                    tf=None, test_df=False, flat=False, data_only = False):
+                    tf=None, test_df=False, flat=False, save=False, data_only=False):
         """Assuming no previous index on trading history
         Indices must also be calculated! """
 
@@ -227,7 +227,6 @@ class Backtester:
                     return df_graph
                 return self.illustrator.graph_df(df_graph, flat=flat)
 
-            # self.new = trade_df, df, df_tf, pre_trade_df, pre_trade_df_tf
 
         if tid != None:
             df_th = df_th.set_index('tid')
@@ -235,15 +234,15 @@ class Backtester:
                 print(df_th.drop(['strategy', 'side', 'symbol', 'tf', 'candles'], axis=1).loc[tid, :])
             df_illus = df_th
             return self.illustrator.prepare_trade_graph_data(df_illus, df_tf, tid, tf=tf, data_only=data_only, flat=flat,
-                                                     adjust_left_view=adjust_left_view, adjust_right_view=adjust_right_view)
+                                                     adjust_left_view=adjust_left_view, save=save, adjust_right_view=adjust_right_view)
         if index != None:
             if not data_only and not test_df:
                 print(df_illus.drop(['strategy', 'side', 'symbol', 'tf', 'candles'], axis=1).loc[index, :])
             return self.illustrator.prepare_trade_graph_data(df_illus.set_index('tid'), df_tf, tid, data_only=False, flat=flat,
-                                                     tf=tf, adjust_left_view=adjust_left_view, adjust_right_view=adjust_right_view)
+                                                     tf=tf, adjust_left_view=adjust_left_view, save=save, adjust_right_view=adjust_right_view)
 
     def graph_benchmark(self, object, enter_datetime, adjust_left_view, base_tf, adjust_right_view=0, space=50,
-                        description=True, flat=False, tf=None, exit_datetime=None):
+                        description=True, flat=False, tf=None, exit_datetime=None, btc=False):
         if description:
             print(f"Symbol: {object.symbol}")
         tf = base_tf if not tf else tf
@@ -253,14 +252,28 @@ class Backtester:
         df_object = object.df[object.df['date'].between(start_datetime, trade_enter_datetime)].copy()
         if exit_datetime:
             exit_datetime += + pd.Timedelta(10*base_tf, 'minutes')
+            trade_enter_datetime = exit_datetime
             df_object = object.df[object.df['date'].between(start_datetime, exit_datetime)].copy()
         df_object_tf = self.loader._timeframe_setter(df_object, tf, drop_last_row=False).reset_index()
         # print(df_object_tf)
+
         if len(df_object_tf) < 280:
             clear_output(wait=True)
             print('Not enough data to cover timeframe, returning to original timeframe.....')
             df_object_tf = self.graph_benchmark(self, enter_datetime, adjust_left_view, base_tf, adjust_right_view, space, flat)
             return df_object_tf
+
+        if btc:
+            print(f"Symbol: {self.symbol[:-4] + object.symbol[:3]}")
+            df_symbol = self.df[self.df['date'].between(start_datetime, trade_enter_datetime)].copy()
+            df_symbol_tf = self.loader._timeframe_setter(df_symbol, tf, drop_last_row=False).reset_index()
+            df_btc = df_symbol_tf[['open', 'high', 'low', 'close']] / df_object_tf[['open', 'high', 'low', 'close']]
+            df_btc[['symbol', 'timeframe', 'timestamp', 'date']] = df_symbol_tf[['symbol', 'timeframe', 'timestamp', 'date']]
+            # print(df_object_tf, df_btc)
+
+            self.new = df_object_tf, df_btc, df_symbol_tf
+
+            self.illustrator.graph_df(df_btc, flat=flat, space=space)
 
         self.illustrator.graph_df(df_object_tf, flat=flat, space=space)
         return df_object_tf
@@ -273,8 +286,28 @@ class Backtester:
     #         # if input in ['s', 'stop', 'STOP', 'S']:
     #         #     return
 
+    def download_all_trades(self, rule=None, tid_list=None, save=False, results=False, space=50):
+        # df_tf_candles = df_tf_candles.reset_index().set_index('date')
+        df_th = self.df_th.reset_index().set_index('tid')
+
+        if rule:
+            df_th = df_th[df_th['rule'] == f'Rule {rule}']
+
+        tids = tid_list if tid_list else df_th.index
+
+        for tid in tids:
+            enter_datetime = df_th.loc[tid, 'enter_date']
+            if results:
+                self.graph_trade(tid, save=save)
+                print(f'saved file:{tid}')
+            else:
+                df_graph = self.graph_trade(tid=tid, data_only=True).reset_index()
+                self.illustrator.graph_df(df_graph[df_graph['date'] <= enter_datetime].set_index('date'), save=save,
+                                          space=space, tid=tid)
+        return "Saved all of them"
+
     def test_intuition_output(self, adjust_left_view, adjusted_tf, base_tf, benchmark, enter_datetime, flat,
-                              i, shift, tid, tids, descriptions=True):
+                              i, shift, tid, tids, btc=False, descriptions=True):
         df_bench = None
         clear_output(wait=True)
         if descriptions:
@@ -285,11 +318,11 @@ class Backtester:
                                         adjust_right_view=shift, base_tf=base_tf, description=descriptions, tf=adjusted_tf)
         if type(benchmark) != type(None):
             df_bench = self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view,
-                                 adjust_right_view=shift, base_tf=base_tf, description= descriptions, tf=adjusted_tf)
+                                 adjust_right_view=shift, base_tf=base_tf, description= descriptions, btc=btc, tf=adjusted_tf)
         return df_graph, df_bench
 
     def test_your_intuition(self, df_th, rule, limit=100, offset=0, adjust_left_view=200, adjust_right_view=250, show_answers=False, flat=True,
-                            tids=None, benchmark=None, refresh_rate=0.1, skip_rate=1, save=False, space=50):
+                            tids=None, benchmark=None, btc=False, refresh_rate=0.1, skip_rate=1, save=False, space=50):
         dic = {1: 'Rule 1', 2: 'Rule 2', 3: 'Rule 3'}
         df_th = df_th.set_index('tid')
         self.my_trades = []
@@ -318,7 +351,7 @@ class Backtester:
             self.illustrator.graph_df(df_graph[df_graph['date'] <= enter_datetime].set_index('date'), space=space, flat=flat)
 
             if type(benchmark) != type(None):
-                self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf)
+                self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf, btc=btc)
 
             while True:
                 answer = input('Would you make this trade? y/n: ')
@@ -330,21 +363,21 @@ class Backtester:
                         count += skip_rate
                         time.sleep(refresh_rate)
                         df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
-                                                                        enter_datetime, flat, i, count, tid, tids, False)
+                                                                        enter_datetime, flat, i, count, tid, tids, btc=btc, descriptions=False)
 
                 elif answer[:2] == '..' and len(answer) > 2:
                     shift = int(answer[2:])
                     adjusted_tf = adjusted_tf if adjusted_tf else df_graph['timeframe'].iloc[0]
 
                     df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
-                                                          enter_datetime, flat, i, shift, tid, tids)
+                                                          enter_datetime, flat, i, shift, tid, tids, btc=btc)
                 elif answer[:1] == 'n' and len(answer) > 1:
                     if not answer[1:]:
                         shift += base_tf
                     elif answer[1:].strip('-').isdigit():
                         shift += int(answer[1:])
                     df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
-                                                          enter_datetime, flat, i, shift, tid, tids)
+                                                          enter_datetime, flat, i, shift, tid, tids, btc=btc)
                 elif answer == 'y':
                     self.my_trades.append(tid)
                     break
@@ -354,7 +387,7 @@ class Backtester:
                     adjusted_tf = int(answer)
 
                     df_graph, df_bench = self.test_intuition_output(adjust_left_view, adjusted_tf, base_tf, benchmark,
-                                                          enter_datetime, flat, i, shift, tid, tids)
+                                                          enter_datetime, flat, i, shift, tid, tids, btc=btc)
 
                 elif answer == 'saveoff':
                     save = False
@@ -370,7 +403,7 @@ class Backtester:
                 self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view, test_df=True, df_th=df_th.reset_index(), flat=flat, data_only=False)
 
                 if type(benchmark) != type(None):
-                    self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf, space=0, exit_datetime=exit_datetime)
+                    self.graph_benchmark(benchmark, enter_datetime, flat=flat, adjust_left_view=adjust_left_view, base_tf=base_tf, space=0, exit_datetime=exit_datetime, btc=btc)
 
                 while True:
                     resp = input('Press c to continue... ')
