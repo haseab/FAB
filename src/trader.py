@@ -350,10 +350,11 @@ class Trader():
 
         return "Trading Stopped"
 
-    def monitor_trades(self) -> pd.DataFrame:
+    def monitor_trades(self, printout=True) -> pd.DataFrame:
+        print("Checking Current Trade Progress.... ")
         positions = self.binance.futures_position_information()
         pnl = 1
-        df_progress = pd.DataFrame()
+        trade_progress = pd.DataFrame()
         for symbol in positions:
             position_size = float(symbol['positionAmt'])
             if position_size != 0:
@@ -366,47 +367,88 @@ class Trader():
                 elif side == 'BUY':
                     pnl = Helper.calculate_long_profitability(enter_price, last_price, 1)
                 usd_size = abs(round(position_size * enter_price, 2))
-                df_progress = df_progress.append(pd.DataFrame([[ticker, side, enter_price, abs(position_size), usd_size, last_price, pnl]],
+                trade_progress = trade_progress.append(pd.DataFrame([[ticker, side, enter_price, abs(position_size), usd_size, last_price, pnl]],
                                                               columns = ['symbol', 'side', 'enter_price', 'size', 'usd size', 'current_price', 'pnl']),
                                                  ignore_index=True)
-        return df_progress
+        if printout:
+            display(trade_progress)
+
+        self.trade_progress = trade_progress
+        return trade_progress
 
     def profit_optimization(self, signals, trade_progress_partial, screener):
+        print()
+        print("Optimizing Trades:... ")
         trades_to_close, trades_to_enter = [], []
+        trade_metrics = self.trade_metrics if type(self.trade_metrics) != type(None) else pd.read_csv("Current metrics for current_trades.csv").set_index('symbol')
 
-        if len(trade_progress_partial) == 0:
+        if len(trade_progress_partial) == 0 or len(trade_metrics) == 0:
             return [], []
 
-        trade_metrics = self.trade_metrics if type(self.trade_metrics) != type(None) else pd.read_csv("Current metrics for current_trades.csv").set_index('symbol')
-        trade_metrics['date'] = trade_metrics['date'].astype('datetime64')
+        signals = self.drop_existing_enters(signals, trade_progress_partial)
+        potentials = signals['peak_unrealized_profit'].sort_values(ascending=False)
+
+
+        trade_metrics[['date', 'due date']] = trade_metrics[['date', 'due date']].astype('datetime64')
         trade_progress = trade_progress_partial.merge(trade_metrics.reset_index(), on='symbol').set_index('symbol')
         trade_progress['delta profit'] = trade_progress['peak_unrealized_profit'] - trade_progress['pnl']
         trade_progress['candles left'] = ((trade_progress['due date'] - datetime.now()).dt.total_seconds() // trade_progress['tf']).astype('int64')
-        potentials = signals['peak_unrealized_profit'].sort_values(ascending=False)
 
         if len(signals) == 0:
             trades_to_close = self.check_trade_close(screener, trade_progress, trades_to_close)
 
         trades_to_close, trades_to_enter = self.check_other_signals(potentials, signals, trade_progress, trades_to_close, trades_to_enter)
 
-        self.new = trade_metrics
+        self.new2 = signals, potentials, trade_metrics, trades_to_close, trades_to_enter
 
-        for index in trade_metrics.index:
-            if index in trades_to_close:
-                trade_metrics.drop(index, inplace=True)
-        for index in potentials.index:
-            if index[0] in trades_to_enter:
-                trade_metrics = trade_metrics.append(potentials.loc[index, :])
-        print(trades_to_close, trades_to_enter)
-        display(trade_metrics)
+        return self.check_enter_exit_trap(trades_to_close, trades_to_enter)
 
-        trade_metrics.to_csv("Current metrics for current_trades.csv")
+    def drop_existing_enters(self, signals, trade_progress_partial):
+        for symbol, tf in signals.index:
+            if symbol in trade_progress_partial['symbol'].values:
+                signals = signals.drop((symbol, tf))
+        return signals
 
+    def check_enter_exit_trap(self, trades_to_close, trades_to_enter):
+        for symbol, tf in trades_to_enter:
+            if symbol in trades_to_close:
+                trades_to_enter.remove((symbol, tf))
+                trades_to_close.remove(symbol)
         return trades_to_close, trades_to_enter
 
+    def update_current_trade_metrics(self):
+        df_all_signals = pd.read_csv("Recent signals.csv").set_index(["symbol", "tf"])
+        df_all_signals['date'] = df_all_signals['date'].astype('datetime64')
+        trade_metrics = pd.DataFrame()
+        trade_progress = self.monitor_trades(printout=False)
+        self.trade_progress = trade_progress
+
+        if len(df_all_signals) == 0 or len(trade_progress)==0:
+            return None
+
+        for symbol, tf in df_all_signals.index:
+            if symbol in trade_progress['symbol'].values:
+                trade_metrics = trade_metrics.append(df_all_signals.loc[[(symbol, tf)]])
+
+        trade_metrics.to_csv("Current metrics for current_trades.csv")
+        display(trade_metrics)
+
+        self.trade_metrics = trade_metrics
+        return trade_metrics
+
+    # def update_current_trade_metrics(self, potentials, trade_metrics, trades_to_close, trades_to_enter):
+    #     for symbol, tf in trade_metrics.index:
+    #         if symbol in trades_to_close:
+    #             trade_metrics.drop((symbol, tf), inplace=True)
+    #     for symbol, tf in potentials.index:
+    #         if (symbol, tf) in trades_to_enter:
+    #             trade_metrics = trade_metrics.append(potentials.loc[(symbol, tf), :])
+    #     print(trades_to_close, trades_to_enter)
+    #     display(trade_metrics)
+    #     trade_metrics.to_csv("Current metrics for current_trades.csv")
+    #     self.trade_metrics = trade_metrics
+
     def check_other_signals(self, potentials, signals, trade_progress, trades_to_close, trades_to_enter):
-
-
         for symbol, tf in potentials.index:
             if len(trade_progress['delta profit']) == 0:
                 break
@@ -416,6 +458,7 @@ class Trader():
                 index_of_trade = trade_progress['delta profit'].idxmin()
 
                 trades_to_close.append(index_of_trade)
+                print('trades switched')
                 trade_progress.drop(index_of_trade, inplace=True)
                 trades_to_enter.append((symbol, side))
         return trades_to_close, trades_to_enter
@@ -444,13 +487,16 @@ class Trader():
         return score * df_current
 
     def check_trade_close(self, screener, trade_progress, trades_to_close, max_candle_history=10):
+        trade_progress = trade_progress.reset_index().drop_duplicates(subset='symbol').set_index('symbol')
         for symbol in trade_progress.index:
-            df = self.set_asset(symbol, trade_progress.loc[symbol, 'tf'], 231 + max_candle_history)
+            tf = trade_progress.loc[symbol, 'tf']
+            df = self.set_asset(symbol=symbol, tf=tf, max_candles_needed=231 + max_candle_history)
             close_signal, *other = screener.check_for_signals(df, self.strategy,
                                                               max_candle_history=max_candle_history, exit=True)
             # print(close_signal)
             if close_signal:
                 trades_to_close.append(symbol)
+                print('trade closed from rules')
                 continue
             tf = trade_progress.loc[symbol, 'tf']
             elapsed_candles = int(
@@ -458,69 +504,75 @@ class Trader():
 
             if elapsed_candles > trade_progress['num_candles_to_peak'].loc[symbol]:
                 trades_to_close.append(symbol)
+                print('trade closed from exceeding candles')
         return trades_to_close
 
-    def monitor_fab(self, screener, capital, executor=None, number_of_trades=3, max_requests=250, leverage=0.001, recency=-1):
-        self.load_account()
-        df_metrics = screener.get_metrics_table()
-        executor = self.executor if not executor else executor
-        client = self.binance
+    def output_loading(self):
+        print('waiting for next minute...', end='\r')
+        time.sleep(0.3)
+        print('waiting for next minute.. ', end='\r')
+        time.sleep(0.3)
+        print('waiting for next minute.  ', end='\r')
+        time.sleep(0.3)
+        print('waiting for next minute   ', end='\r')
+        time.sleep(0.3)
+        print('waiting for next minute.  ', end='\r')
+        time.sleep(0.3)
+        print('waiting for next minute..  ', end='\r')
+        time.sleep(0.3)
 
+    def trade_free_capital(self, client, executor, leverage, remaining_to_invest, trades_to_enter):
+        print(f"Free capital: {remaining_to_invest} USD")
+        self.df_orders = executor.enter_market(client, symbol_side_pair=trades_to_enter,
+                                               capital=remaining_to_invest,
+                                               leverage=leverage)
+        display(self.df_orders)
+
+    def calculate_remaining_capital(self, capital):
         trade_progress_partial = self.monitor_trades()
-        total_invested = trade_progress_partial['usd size'].sum() if len(trade_progress_partial)>0 else 0
+        total_invested = trade_progress_partial['usd size'].sum() if len(trade_progress_partial) > 0 else 0
         remaining_to_invest = capital - total_invested
+        return remaining_to_invest
 
-        if remaining_to_invest > 25:
-            self.trade_metrics = screener.top_trades(trader=self, n=number_of_trades, max_requests=max_requests, df_metrics=df_metrics, df=True, recency=recency)
-            self.df_orders = executor.enter_market(client, trade_metrics=self.trade_metrics, capital=remaining_to_invest, leverage=leverage)
-            self.trade_metrics.to_csv(f"Current metrics for current_trades.csv")
-            print("Sleeping 60 seconds...")
-            time.sleep(10)
-            time.sleep(10)
-            time.sleep(10)
-            time.sleep(10)
-            time.sleep(10)
-            time.sleep(10)
+    def optimize_trades(self, capital, client, df_recent_signals, executor, leverage, screener):
+        if len(df_recent_signals) != 0 or len(self.trade_progress) != 0:
+            trades_to_close, trades_to_enter = self.profit_optimization(df_recent_signals, self.trade_progress,
+                                                                        screener=screener)
+            if trades_to_close:
+                self.close_trade_info = executor.exit_market(client, self.get_positions_amount(trades_to_close))
+                display(self.close_trade_info)
+            if trades_to_enter:
+                self.enter_trade_info = executor.enter_market(client, trades_to_enter, capital,
+                                                              leverage=leverage)
+                display(self.enter_trade_info)
 
-        now = datetime.now()
-        now = datetime(year=now.year, month=now.month, day=now.day, hour=now.hour, minute=now.minute)
+            else:
+                print("No Trades made")
+
+
+    def monitor_fab(self, screener, capital, df_metrics, number_of_trades=3, tfs=None, rule2=False, max_requests=315, leverage=0.001, recency=-1):
+        self.load_account()
+        client, executor = self.binance, self.executor
+
+        now = Helper.current_minute_datetime()
         while True:
             if datetime.now() >= now + pd.Timedelta(1, 'minute'):
                 clear_output(wait=True)
                 print(datetime.now())
-                print("Getting Top New Trades:.... ")
-                df_signals = screener.top_trades(trader=self, df_metrics=df_metrics, max_requests=max_requests, df=True, n=number_of_trades)
-                print("Checking Current Trade Progress.... ")
-                trade_progress = self.monitor_trades()
-                if len(df_signals) == 0 and len(trade_progress) == 0:
-                    now = datetime.now()
-                    now = datetime(year=now.year, month=now.month, day=now.day, hour=now.hour, minute=now.minute)
-                    continue
-                print()
-                print("Optimizing Trades:... ")
-                trades_to_close, trades_to_enter = self.profit_optimization(df_signals, trade_progress, screener=screener)
 
-                if trades_to_close:
-                    print(f"Decision Made! Exiting {trades_to_close}")
-                    self.close_trade_info = executor.exit_market(client, self.get_positions_amount(trades_to_close))
-                if trades_to_enter:
-                    print(f"Decision Made! Entering {trades_to_enter}")
-                    self.enter_trade_info = executor.enter_market(client, trades_to_enter, capital, leverage=leverage)
+                remaining_to_invest = self.calculate_remaining_capital(capital)
+                trades_to_enter, df_recent_signals = screener.top_trades(trader=self, df_metrics=df_metrics, tfs=tfs,
+                                                        max_requests=max_requests, rule2=rule2, df=False, n=number_of_trades)
+
+                if remaining_to_invest > 50 and trades_to_enter:
+                    self.trade_free_capital(client, executor, leverage, remaining_to_invest, trades_to_enter)
                 else:
-                    print("No Trades made")
+                    self.optimize_trades(capital, client, df_recent_signals, executor, leverage, screener)
 
-                now = datetime.now()
-                now = datetime(year=now.year, month=now.month, day=now.day, hour=now.hour, minute=now.minute)
+                self.update_current_trade_metrics()
+
+                now = Helper.current_minute_datetime()
                 print()
-            print('waiting for next minute...', end='\r')
-            time.sleep(0.3)
-            print('waiting for next minute.. ', end='\r')
-            time.sleep(0.3)
-            print('waiting for next minute.  ', end='\r')
-            time.sleep(0.3)
-            print('waiting for next minute   ', end='\r')
-            time.sleep(0.3)
-            print('waiting for next minute.  ', end='\r')
-            time.sleep(0.3)
-            print('waiting for next minute..  ', end='\r')
-            time.sleep(0.3)
+            self.output_loading()
+
+
