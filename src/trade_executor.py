@@ -42,7 +42,6 @@ class TradeExecutor:
     @staticmethod
     def how_much_to_buy(current_balance, leverage, last_price: str, precision) -> float:
         """Formula that calculates the position size"""
-        print(current_balance, leverage, last_price)
         significant = Helper.sig_fig(current_balance * leverage / float(last_price), 4)
         if significant.is_integer():
             return int(significant)
@@ -86,8 +85,8 @@ class TradeExecutor:
         #         assert self.how_much_to_buy(last_price) <= self.capital*leverage/last_price + 1
         df_trade_info = pd.DataFrame()
         futures_info = client.futures_exchange_info()
-        # symbols = trade_metrics.index.unique(level=0)
-        # sides = [i[1] for i in trade_metrics['signal']]
+        list_of_symbols = [symbol for symbol, side in symbol_side_pair]
+        print(f"Entering: {', '.join(list_of_symbols)} ")
 
         for symbol, side in symbol_side_pair:
             precision = [dic["quantityPrecision"] for dic in futures_info['symbols'] if dic['symbol'] == symbol][0]
@@ -98,7 +97,6 @@ class TradeExecutor:
                 'type': 'MARKET',
                 'quantity': self.how_much_to_buy(capital//len(symbol_side_pair), leverage, last_price, precision)
             }
-            print(enter_market_params['quantity'])
             latest_trade = client.futures_create_order(**enter_market_params)
             trade_info = client.futures_get_order(symbol=symbol, orderId=latest_trade["orderId"])
             df_trade_info = df_trade_info.append(pd.DataFrame([trade_info.values()], columns=trade_info.keys()), ignore_index=True)
@@ -116,6 +114,8 @@ class TradeExecutor:
         Returns: dict     Ex. see "enter_market" description
         """
         df_trade_info = pd.DataFrame()
+        list_of_symbols = [symbol for symbol, position in positions.items()]
+        print(f"Exiting: {', '.join(list_of_symbols)} ")
         for symbol, position_amount in positions.items():
             side = "BUY" if position_amount < 0 else "SELL"
 
@@ -126,7 +126,6 @@ class TradeExecutor:
                 'quantity': abs(position_amount)
             }
 
-            print(exitMarketParams['quantity'])
             latest_trade = client.futures_create_order(**exitMarketParams)
             trade_info = client.futures_get_order(symbol=symbol, orderId=latest_trade["orderId"])
             df_trade_info = df_trade_info.append(pd.DataFrame([trade_info.values()], columns=trade_info.keys()), ignore_index=True)

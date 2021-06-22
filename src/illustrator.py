@@ -22,18 +22,11 @@ class Illustrator:
     def __init__(self):
         self.strategy = FabStrategy()
 
-    def download_all_trades(self, df_trading_history, df_tf_candles, save=False):
-        df_tf_candles = df_tf_candles.reset_index().set_index('date')
-        df_th = df_trading_history.reset_index().set_index('tid')
-        for tid in df_th.index:
-            self.prepare_trade_graph_data(df_th, df_tf_candles, tid, save)
-            print('saved file')
-        return "Saved all of them"
-
     def set_graph_style(self, df_graph, sma=True):
         addplot = []
         haseab_colors = mpf.make_marketcolors(up='#4ea672', down='#cf4532', edge='black')
         self.haseab_style = mpf.make_mpf_style(marketcolors=haseab_colors, gridcolor='#d4d4d4')
+
         if sma:
             # df_graph = self.add_sma_to_def(df_graph)
             ma_green = mpf.make_addplot(df_graph['green'], color='#3bed05', width=2.0)
@@ -42,6 +35,7 @@ class Illustrator:
             ma_black = mpf.make_addplot(df_graph['black'], color='#000000', width=2.0)
             ma_light_blue = mpf.make_addplot(df_graph['light blue'], color="#8cf5ff", width=2.0)
             ma_red = mpf.make_addplot(df_graph['red'], color='red', width=2.0)
+
             addplot = [ma_green, ma_orange, ma_blue, ma_black, ma_light_blue, ma_red]
         return df_graph, addplot
 
@@ -56,9 +50,11 @@ class Illustrator:
         df['light blue'] = self.strategy.light_blue
         df['red'] = self.strategy.red
 
+        self.new = df[231:]
+
         return df[231:]
 
-    def prepare_trade_graph_data(self, df_th, df_tf_candles, tid, tf, data_only=False, flat=False, adjust_left_view=29, adjust_right_view=10):
+    def prepare_trade_graph_data(self, df_th, df_tf_candles, tid, tf, data_only=False, flat=False, adjust_left_view=29, adjust_right_view=10, save=False):
         start_datetime = df_th.loc[tid, 'enter_date']
         end_datetime = df_th.loc[tid, 'exit_date']
         enter_price = df_th.loc[tid, 'enter_price']
@@ -83,15 +79,17 @@ class Illustrator:
         illus_data = pre_data.append(trade_data.append(post_data))
 
         df_graph = self.add_sma_to_df(illus_data)
+
         if len(df_graph) == 0:
             return pd.DataFrame()
 
         if data_only:
             return df_graph
 
-        return self.graph_df(df_graph, position_side=position_side, flat=flat)
+        self.graph_df(df_graph, position_side=position_side, flat=flat, tid=tid, save=save)
+        return df_graph
 
-    def graph_df(self, df_graph, position_side=None, sma=True, space=0, flat=False):
+    def graph_df(self, df_graph, position_side=None, sma=True, space=0, flat=False, tid=None, save=False):
 
         if df_graph.index.name != 'date':
             df_graph = df_graph.reset_index().set_index('date')
@@ -102,9 +100,9 @@ class Illustrator:
 
         df_graph, addplot = self.set_graph_style(df_graph, sma=sma)
 
-        figratio = (40,15)
+        figratio = (40, 15)
         if flat:
-            figratio = (40,10)
+            figratio = (40, 8)
 
         if position_side:
             pnl_line = df_graph['pnl_line'].dropna()
@@ -121,6 +119,15 @@ class Illustrator:
             profit_line_outer = mpf.make_addplot(df_graph['pnl_line'], color='black', marker='o', markersize=50, width=7.0)
 
             addplot += [profit_line_outer, profit_line_inner]
+
+        if save:
+            symbol = df_graph.reset_index()['symbol'].iloc[0]
+            file_name = f"C:\\Users\\haseab\\Desktop\\Python\\PycharmProjects\\FAB\\local\\PNG Images\\{symbol} #{tid}.png"
+
+            graph = mpf.plot(df_graph, type='candle', figratio=figratio, datetime_format='%Y-%m-%d %H:%M:%S',
+                             tight_layout=True, xrotation=0, xlim=(0, len(df_graph) + space), style=self.haseab_style,
+                             warn_too_much_data=10000, addplot=addplot, savefig=file_name)
+
 
         graph = mpf.plot(df_graph, type='candle', figratio=figratio, datetime_format='%Y-%m-%d %H:%M:%S',
                          tight_layout=True, xrotation=180, xlim=(0, len(df_graph)+space), style=self.haseab_style,

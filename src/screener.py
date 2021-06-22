@@ -18,7 +18,7 @@ class Screener:
         self.master_screener = pd.DataFrame()
         self.strategy = FabStrategy()
 
-    def check_for_signals(self, df, strategy, enter=False, exit=False, max_candle_history=10, v2=False):
+    def check_for_signals(self, df, strategy, enter=False, exit=False, rule2=False, max_candle_history=10, v2=False):
         if enter and exit:
             raise Exception("Both Enter and Exit Signals were requested. Choose only one")
         if not enter and not exit:
@@ -31,15 +31,15 @@ class Screener:
         strategy.load_data(df)
         strategy.update_moving_averages()
 
-        # list_of_enters = {
-        #                     ('Rule 1', 'Long'): strategy.rule_1_buy_enter,
-        #                     ('Rule 1', 'Short'): strategy.rule_1_short_enter,
-        #                     ('Rule 2', 'Long'):  strategy.rule_2_buy_enter,
-        #                     ('Rule 2', 'Short'): strategy.rule_2_short_enter,
-        #                     ('Rule 3', 'Long'): strategy.rule_3_buy_enter,
-        #                     ('Rule 3', 'Short'): strategy.rule_3_short_enter
-        #                   }
-        #
+        list_of_enters = {
+                            ('Rule 1', 'Long'): strategy.rule_1_buy_enter,
+                            ('Rule 1', 'Short'): strategy.rule_1_short_enter,
+                            ('Rule 2', 'Long'):  strategy.rule_2_buy_enter,
+                            ('Rule 2', 'Short'): strategy.rule_2_short_enter,
+                            ('Rule 3', 'Long'): strategy.rule_3_buy_enter,
+                            ('Rule 3', 'Short'): strategy.rule_3_short_enter
+                          }
+
         list_of_exits = {
                             ('Rule 1', 'Long'): strategy.rule_1_buy_exit,
                             ('Rule 1', 'Short'): strategy.rule_1_short_exit,
@@ -49,36 +49,39 @@ class Screener:
                             ('Rule 3', 'Short'): strategy.rule_1_short_exit
                           }
 
-        list_of_enters = {
-                        ('Rule 2', 'Long'): strategy.rule_2_buy_enter,
-                        ('Rule 2', 'Short'): strategy.rule_2_short_enter,
-                        }
 
+        if rule2:
+            list_of_enters = {
+                ('Rule 2', 'Long'): strategy.rule_2_buy_enter,
+                ('Rule 2', 'Short'): strategy.rule_2_short_enter,
+            }
 
         for rule, side in list_of_enters:
-            for x_last_row in range(-max_candle_history, 0):
-                if enter:
-                    if list_of_enters[(rule,side)](x_last_row) != True:
-                        continue
-                    for remaining_row in range(x_last_row + 1, 0):
-                        if list_of_exits[(rule, side)](remaining_row) == True:
-                            return False, None, None, None
-                    return True, x_last_row, rule, side
-                if exit:
-                    # print(x_last_row,  list_of_exits[(rule, side)](x_last_row))
-                    if list_of_exits[(rule, side)](x_last_row) == True:
+                for x_last_row in range(-max_candle_history, 0):
+                    if enter:
+                        if list_of_enters[(rule,side)](x_last_row) != True:
+                            continue
+                        for remaining_row in range(x_last_row + 1, 0):
+                            if list_of_exits[(rule, side)](remaining_row) == True:
+                                return False, None, None, None
                         return True, x_last_row, rule, side
+                    if exit:
+                        # print(x_last_row,  list_of_exits[(rule, side)](x_last_row))
+                        if list_of_exits[(rule, side)](x_last_row) == True:
+                            return True, x_last_row, rule, side
+
         return False, None, None, None
 
-    def screen(self, trader, metrics_table, max_requests=250, max_candle_history=10, max_candles_needed=231, v2=False):
+    def screen(self, trader, metrics_table, max_requests=250, max_candle_history=10, rule2=False, tfs=None, max_candles_needed=231, v2=False):
         metrics_table = metrics_table[:]
         symbols = pd.DataFrame(metrics_table.index.unique(level=0), columns=['symbol'])
-        tfs = pd.DataFrame(metrics_table.index.unique(level=1), columns=['tf'])
-        tfs = tfs.set_index('tf').drop([3, 7, 21, 60, 77, 240]).reset_index()
-        df_symbol_tf = symbols.merge(tfs, how='cross')
+        tfs = [tf for tf in tfs if tf in metrics_table.index.unique(level=1)]
+        if not tfs:
+            # tfs = metrics_table.index.unique(level=1)
+            tfs = [5, 15]
+        tfs_df = pd.DataFrame(tfs, columns=['tf'])
+        df_symbol_tf = symbols.merge(tfs_df, how='cross')
         max_candles_needed = max_candles_needed + max_candle_history + 1
-
-        # return df_symbol_tf
         partial_screener = pd.DataFrame(columns=['date', 'signal', 'how recent', 'metric_id'])
 
         # Grabs Binance data for every single (symbol, tf) pair
@@ -93,17 +96,15 @@ class Screener:
                 results.append(executor.submit(trader.set_asset, symbol, tf, max_candles_needed))
             executor.shutdown(wait=True)
 
-        # with ThreadPoolExecutor(max_workers=50) as executor:
-        #     results = executor.map(trader.set_asset, df_symbol_tf['symbol'].values, df_symbol_tf['tf'].values, max_candles_needed)
-        #     executor.shutdown(wait=True)
-
         for df_future, symbol, tf in zip(results, df_symbol_tf['symbol'], df_symbol_tf['tf']):
             df = df_future.result()
-            signal, x_many_candles_ago, rule, side = self.check_for_signals(df, self.strategy, max_candle_history=10, v2=v2, enter=True)
+            signal, x_many_candles_ago, rule, side = self.check_for_signals(df, self.strategy, max_candle_history=10, rule2=rule2, v2=v2, enter=True)
 
             if signal:
-                # tf = int((df['date'].iloc[1]-df['date'].iloc[0]).total_seconds()/60)
-                metric_id = int(metrics_table.loc[(symbol, tf, rule, side), 'metric_id'])
+                try:
+                    metric_id = int(metrics_table.loc[(symbol, tf, rule, side), 'metric_id'])
+                except Exception:
+                    continue
                 date = datetime.now() - timedelta(minutes=int(abs(x_many_candles_ago)*tf))
                 change_factor = float(df['close'].iloc[-1]/df['close'].iloc[x_many_candles_ago])
                 percentage_change = Helper.factor_to_percentage([change_factor])[0]
@@ -120,7 +121,7 @@ class Screener:
         delta = pd.to_timedelta(master_screener['num_candles_to_peak']*master_screener['tf'], 'minutes')
         master_screener['due date'] = master_screener['date'] + delta
         master_screener = master_screener.set_index(['symbol', 'tf']).sort_values(
-            ['most recent', 'symbol', 'how recent', 'unrealized_rrr'], ascending=[False, False, False, False])
+            ['most recent', 'how recent', 'unrealized_rrr'], ascending=[False, False, False])
         master_screener = master_screener[['metric_id'] + list(master_screener.columns.drop('metric_id'))]
         return master_screener
 
@@ -170,20 +171,24 @@ class Screener:
 
             time.sleep(0.5)
 
-    def top_trades(self, trader, df_metrics, df=False, max_requests=250,  n=3, recency=-1):
-        top_n_trades = self.screen(trader=trader, max_requests=max_requests, metrics_table=df_metrics)
-        df_filtered = top_n_trades[top_n_trades['how recent'] == -1].head(n)
+    def top_trades(self, trader, df_metrics, tfs, df=False, max_requests=250,  n=3, rule2=False, full=False, recency=-1):
+        print("Getting Top New Trades:.... ")
+        top_n_trades = self.screen(trader=trader, max_requests=max_requests, tfs=tfs, rule2=rule2, metrics_table=df_metrics, v2=True)
+        top_n_trades.to_csv("Recent signals.csv")
+        df_filtered = top_n_trades[top_n_trades['how recent'] == recency].head(n)
+        if full:
+            df_filtered = top_n_trades
         if len(df_filtered) == 0:
             print("Found no new trades at this time")
         if df:
             return df_filtered
-        # top_recent_trades = []
-        # for trade in top_n_trades.index:
-        #     if top_n_trades.loc[trade, 'how recent'] == recency:
-        #         side = top_n_trades.loc[trade, 'signal'][1]
-        #         symbol = trade[0]
-        #         top_recent_trades.append((symbol, side))
-        # return top_recent_trades
+        top_recent_trades = []
+        for trade in top_n_trades.index:
+            if top_n_trades.loc[trade, 'how recent'] == recency:
+                side = top_n_trades.loc[trade, 'signal'][1]
+                symbol = trade[0]
+                top_recent_trades.append((symbol, side))
+        return top_recent_trades[:n+1], df_filtered
 
 
 
