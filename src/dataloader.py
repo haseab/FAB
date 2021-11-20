@@ -1,11 +1,16 @@
-import time
-import pandas as pd
-from datetime import datetime
-from binance.client import Client
-from helper import Helper
-import sqlalchemy
 import json
+import time
+from datetime import datetime
+
+import dateparser
+import pandas as pd
+from binance.client import Client
+from ib_insync import *
+from qtrade import Questrade
+
+from helper import Helper
 from sql_mapper import SqlMapper
+
 
 class _DataLoader:
     """
@@ -13,7 +18,7 @@ class _DataLoader:
 
     Attributes
     -----------
-    client: Client object which is the Binance API Python wrapper
+    binance: Client object which is the Binance API Python wrapper
 
     Methods
     ------------
@@ -26,16 +31,22 @@ class _DataLoader:
     """
     SECOND_TO_MILLISECOND = 1000
 
-    def __init__(self, db=True):
-        self.client = Client()
+    def __init__(self, db=False, qtrade=False, ib=False):
+        self.ib = IB()
+        # self.binance = Client()
+        if qtrade:
+            self.qtrade = Questrade(token_yaml='C:/Users/haseab/Desktop/Python/PycharmProjects/FAB/local/Workers/access_token.yml', save_yaml=True)
+            print('Connected to Questrade API')
         if db:
             self.sql = SqlMapper()
             self.conn = self.sql.connect_psql()
+        if ib:
+            print(self.ib.connect('127.0.0.1', 7496, 122))
 
     def _load_csv_v2(self, csv_url):
         tf = csv_url.split(' ')[2][:-1]
         symbol = csv_url.split(' ')[1]
-
+ 
         data = pd.read_csv(csv_url)
         data['timestamp'] = [int(timestamp/1000) for timestamp in data['timestamp']]
         data['date'] = [datetime.fromtimestamp(timestamp) for timestamp in data['timestamp'].values]
@@ -83,9 +94,28 @@ class _DataLoader:
         end_time = Helper().minutes_ago_to_timestamp(end_minutes_ago, now, adjust=self.SECOND_TO_MILLISECOND)
         num_candles = abs(start_minutes_ago - end_minutes_ago)
 
-        data = self.client.futures_klines(symbol=symbol, interval="1m", startTime=start_time, endTime=end_time, limit=num_candles)
+        data = self.binance.futures_klines(symbol=symbol, interval="1m", startTime=start_time, endTime=end_time, limit=num_candles)
 
-        return Helper.into_dataframe(data)
+        return Helper.into_dataframe(data, symbol=symbol, tf=1)
+    
+    def _get_ibkr_stocks_candles(self, ticker: str, tf: int, start_time, end_time):
+        tf_map = {1: "1 min", 5: "5 mins", 15: "15 mins", 30: "30 mins", 
+                  60: "1 hour", 240: "4 hours", 1440: "1 day"}
+        parsed_start, parsed_end = dateparser.parse(start_time), dateparser.parse(end_time)
+        duration = (parsed_end - parsed_start).days + 1 
+
+        bars = self.ib.reqHistoricalData(Stock(str(ticker), 'SMART', 'USD'),
+                                        endDateTime=parsed_end,
+                                        durationStr=f'{duration} D',
+                                        barSizeSetting= tf_map[tf],
+                                        whatToShow='TRADES',
+                                        useRTH=False,
+                                        formatDate=1)
+
+        df = util.df(bars)
+        df = df.drop(['average', 'barCount'], axis=1)
+        df['timestamp'] = Helper.datetime_to_millisecond_timestamp(df['date'])
+        return df[['timestamp', 'date', 'open', 'high','low', 'close', 'volume']].set_index("timestamp")
 
     def _get_range(self, dataframe: pd.DataFrame, start_date: str = None,
                    end_date: str = None) -> pd.DataFrame:
@@ -182,9 +212,19 @@ class _DataLoader:
 
         return df.reset_index().set_index(['symbol', 'timeframe', 'timestamp'])
 
+    def get_questrade_stocks_candles(self, symbol: str, tf: int, start_time, end_time):
+        print('start')
+        tf_map = {1: "OneMinute", 5: "FiveMinutes", 15: "FifteenMinutes", 30: "HalfHour", 
+                  60: "OneHour", 240: "FourHours", 1440: "OneDay"}
+        parsed_start, parsed_end = dateparser.parse(start_time), dateparser.parse(end_time)
+        parsed_start, parsed_end = parsed_start.strftime('%Y-%m-%d %H:%M:%S.%f'), parsed_end.strftime('%Y-%m-%d %H:%M:%S.%f')
+        print('finished converting the times', parsed_start, parsed_end)
+        data = self.qtrade.get_historical_data(symbol, parsed_start, parsed_end, tf_map[tf])
+        print('got data', len(data))
+        return Helper.into_dataframe(data, symbol=symbol, tf=tf)
 
     def get_all_binance_data(self, symbol, start_date, end_date=None, tf='1m'):
-        list_symbol = self.client.get_historical_klines(symbol=symbol, interval=tf, start_str=start_date)
+        list_symbol = self.binance.get_historical_klines(symbol=symbol, interval=tf, start_str=start_date)
         df_symbol = pd.DataFrame(list_symbol)
         df_symbol.columns = ["timestamp", "open", "high", "low", "close", "volume", "timestamp_end", "", "", "", "", ""]
 
