@@ -1,8 +1,10 @@
 import math
-import pandas as pd
-from datetime import datetime, timedelta
 import time
+from datetime import datetime, timedelta
+
+import dateparser
 import numpy as np
+import pandas as pd
 
 
 class Helper:
@@ -77,19 +79,42 @@ class Helper:
         return round(time.time() % 60, 1) == 0
 
     @staticmethod
-    def into_dataframe(lst: list) -> pd.DataFrame:
+    def into_dataframe(lst: list, symbol, tf) -> pd.DataFrame:
         """Converts Binance response list into dataframe"""
-        data = pd.DataFrame(lst, columns=["timestamp", "open", "high", "low", "close", "volume",
-                                          "", "", "", "", "", ""])
-        data[["open", "high", "low", "close", "volume"]] = data[["open", "high", "low", "close", "volume"]].astype(
-            float)
-        data['date'] = Helper.millisecond_timestamp_to_datetime(data['timestamp'])
-        return data.set_index("timestamp")
+        crypto = 'USDT' in symbol
 
+        if crypto:
+            df = pd.DataFrame(lst, columns=["timestamp", "open", "high", "low", "close", "volume",
+                                            "", "", "", "", "", ""])
+            df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(
+                float)
+            df['date'] = Helper.millisecond_timestamp_to_datetime(df['timestamp'])
+            df['symbol'] = [symbol]*len(lst)
+            df['tf'] = [tf]*len(lst)
+        else:
+            df = pd.DataFrame(lst).drop('start', axis=1).rename(columns = {'end': 'date'})
+            df['date'] = [pd.Timestamp(date).tz_localize(None) for date in df['date']]
+            df['timestamp'] = Helper.datetime_to_millisecond_timestamp(df['date'])
+            df['ticker'] = [symbol]*len(lst)
+            df['tf'] = [tf]*len(lst)
+        
+
+        return df[['ticker', 'tf', 'timestamp', 'date', 'open', 'high','low', 'close', 'volume']].set_index("timestamp")
+
+    @staticmethod
+    def datetime_from_tf(daily_candles, tf, max_candles_needed=235):
+        how_many_days_ago = max_candles_needed*tf//daily_candles + 1
+        start_time, end_time = f"{how_many_days_ago} days ago" , 'now'
+        parsed_start, parsed_end = dateparser.parse(start_time), dateparser.parse(end_time)
+        parsed_start, parsed_end = parsed_start.strftime('%Y-%m-%d %H:%M:%S.%f'), parsed_end.strftime('%Y-%m-%d %H:%M:%S.%f')
+        return parsed_start, parsed_end
 
     @staticmethod
     def millisecond_timestamp_to_datetime(timestamp_list):
         return [datetime.fromtimestamp(second_timestamp / 1000) for second_timestamp in timestamp_list]
+
+    def datetime_to_millisecond_timestamp(datetime_list):
+        return (datetime_list - pd.Timestamp("1970-01-01").tz_localize(None)) // pd.Timedelta('1s')
 
     @staticmethod
     def calculate_minute_disparity(df: pd.DataFrame, tf: int) -> float:
