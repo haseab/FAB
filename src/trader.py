@@ -1,19 +1,23 @@
-from binance.client import Client
-import pandas as pd
-from datetime import datetime
-from helper import Helper
-from fab_strategy import FabStrategy
-from dataloader import _DataLoader
-from trading_history import TradeHistory
 import math
-import time
-import numpy as np
-from decouple import config
 import os
-from illustrator import Illustrator
+import random
+import time
+from datetime import datetime
+
+import dateparser
+import numpy as np
+import pandas as pd
+from binance.client import Client
+from decouple import config
 from ftx import FtxClient
-from IPython.display import display, clear_output
+from IPython.display import clear_output, display
+
+from dataloader import _DataLoader
+from fab_strategy import FabStrategy
+from helper import Helper
+from illustrator import Illustrator
 from trade_executor import TradeExecutor
+from trading_history import TradeHistory
 
 
 class Trader():
@@ -44,7 +48,7 @@ class Trader():
     """
     max_candle_history = 231
 
-    def __init__(self, db=True):
+    def __init__(self, qtrade=False, db=False):
         self.start = False
         self.binance = Client()
         self.ftx = FtxClient()
@@ -54,7 +58,7 @@ class Trader():
         self.executor = TradeExecutor()
         self.symbol = None
         self.trade_metrics = None
-        self.loader = _DataLoader(db=db)
+        self.loader = _DataLoader(db=db, qtrade=qtrade, ib=False)
         self.illustrator = Illustrator()
         self.strategy = FabStrategy()
         self.df = None
@@ -150,7 +154,7 @@ class Trader():
         data = self.set_asset(symbol, tf, max_candles_needed=375, drop_last_row=False)
         return self.illustrator.graph_df(data)
 
-    def get_necessary_data(self, symbol: str, tf: int, max_candles_needed: int) -> pd.DataFrame:
+    def get_necessary_data(self, symbol: str, tf: int, max_candles_needed:int = 235) -> pd.DataFrame:
         """
         Gets the minimum necessary data to trade this asset.
 
@@ -168,16 +172,33 @@ class Trader():
         """
         now = time.time()
         df = pd.DataFrame()
-        ranges = Helper.determine_candle_positions(max_candles_needed, tf)
 
+        crypto = 'USDT' in symbol
 
-        for i in range(len(ranges)):
-            try:
-                df = df.append(self.loader._get_binance_futures_candles(symbol, int(ranges[i]), int(ranges[i + 1]), now))
-            except IndexError:
-                pass
-        df['symbol'] = [symbol for _ in range(len(df))]
-        return df.drop_duplicates()
+        if crypto:
+            ranges = Helper.determine_candle_positions(max_candles_needed, tf)
+
+            for i in range(len(ranges)):
+                try:
+                    df = df.append(self.loader._get_binance_futures_candles(symbol, int(ranges[i]), int(ranges[i + 1]), now))
+                except IndexError:
+                    pass
+            df['symbol'] = [symbol for _ in range(len(df))]
+            return df.drop_duplicates()
+        else:
+            tf_map = {1: "OneMinute", 5: "FiveMinutes", 15: "FifteenMinutes", 30: "HalfHour", 
+                  60: "OneHour", 240: "FourHours", 1440: "OneDay"}
+            daily_candles = 350
+            how_many_days_ago = max_candles_needed*tf//daily_candles + 1
+            start_time, end_time = f"{how_many_days_ago} days ago" , 'now'
+            parsed_start, parsed_end = dateparser.parse(start_time), dateparser.parse(end_time)
+            parsed_start, parsed_end = parsed_start.strftime('%Y-%m-%d %H:%M:%S.%f'), parsed_end.strftime('%Y-%m-%d %H:%M:%S.%f')
+            data = self.loader.qtrade.get_historical_data(symbol, parsed_start, parsed_end, tf_map[tf])
+            return Helper.into_dataframe(data, symbol=symbol, tf=tf)
+    
+    def get_fast_stock_data(self, symbol, start_datetime, end_datetime, tf_str, tf):
+        data = self.loader.qtrade.get_historical_data(symbol, start_datetime, end_datetime, tf_str)
+        return Helper.into_dataframe(data, symbol=symbol, tf=tf)
 
     def _update_data(self, diff: int, symbol: str, ) -> None:
         """
@@ -203,7 +224,7 @@ class Trader():
         # Updating original data with new data.
         self.df = self.df.append(last_few_candles).drop_duplicates()
 
-    def get_positions_amount(self, list_of_symbols: [str]) -> [float]:
+    def get_positions_amount(self, list_of_symbols: list) -> list:
         """
         Gets the total amount of current position for a given symbol
         Parameters:
@@ -240,7 +261,7 @@ class Trader():
         if tf in map_tf.keys():  # Note: 12H, 1D, 3D, 1W, 1M are also recognized
             # Fetching data from Binance if it matches the eligible timeframe, as it will be faster
             df = Helper.into_dataframe(
-                self.binance.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time))
+                self.binance.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time), symbol=symbol, tf=tf)
             if drop_last_row:
                 df.drop(df.tail(1).index, inplace=True)
         else:

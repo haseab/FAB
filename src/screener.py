@@ -1,24 +1,29 @@
-import pandas as pd
-import sqlalchemy
-from backtester import Backtester
-from fab_strategy import FabStrategy
-from trader import Trader
 import time
-from datetime import datetime, timedelta
-from dataloader import _DataLoader
-from IPython.display import display, clear_output
-from playsound import playsound
-from helper import Helper
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+import requests
+import sqlalchemy
+from IPython.display import clear_output, display
+from playsound import playsound
+
+from backtester import Backtester
+from dataloader import _DataLoader
+from fab_strategy import FabStrategy
+from helper import Helper
+from trader import Trader
+
 
 class Screener:
 
-    def __init__(self):
-        self.loader = _DataLoader()
+    def __init__(self, db=False):
+        self.loader = _DataLoader(db=db, ib=False)
         self.master_screener = pd.DataFrame()
         self.strategy = FabStrategy()
 
-    def check_for_signals(self, df, strategy, enter=False, exit=False, rule2=False, max_candle_history=10, v2=False):
+    def _check_for_signals(self, df, strategy, enter=False, exit=False, rule2=False, max_candle_history=10, v2=False):
         if enter and exit:
             raise Exception("Both Enter and Exit Signals were requested. Choose only one")
         if not enter and not exit:
@@ -29,7 +34,6 @@ class Screener:
             strategy.rule_2_short_enter = strategy.rule_2_short_enter_v2
 
         strategy.load_data(df)
-        strategy.update_moving_averages()
 
         list_of_enters = {
                             ('Rule 1', 'Long'): strategy.rule_1_buy_enter,
@@ -49,7 +53,6 @@ class Screener:
                             ('Rule 3', 'Short'): strategy.rule_1_short_exit
                           }
 
-
         if rule2:
             list_of_enters = {
                 ('Rule 2', 'Long'): strategy.rule_2_buy_enter,
@@ -57,28 +60,98 @@ class Screener:
             }
 
         for rule, side in list_of_enters:
-                for x_last_row in range(-max_candle_history, 0):
-                    if enter:
-                        if list_of_enters[(rule,side)](x_last_row) != True:
-                            continue
-                        for remaining_row in range(x_last_row + 1, 0):
-                            if list_of_exits[(rule, side)](remaining_row) == True:
-                                return False, None, None, None
+            for x_last_row in range(-max_candle_history, 0):
+                if enter:
+                    if list_of_enters[(rule,side)](x_last_row) != True:
+                        continue
+                    for remaining_row in range(x_last_row + 1, 0):
+                        if list_of_exits[(rule, side)](remaining_row) == True:
+                            return False, None, None, None
+                    return True, x_last_row, rule, side
+                if exit:
+                    # print(x_last_row,  list_of_exits[(rule, side)](x_last_row))
+                    if list_of_exits[(rule, side)](x_last_row) == True:
                         return True, x_last_row, rule, side
-                    if exit:
-                        # print(x_last_row,  list_of_exits[(rule, side)](x_last_row))
-                        if list_of_exits[(rule, side)](x_last_row) == True:
-                            return True, x_last_row, rule, side
 
         return False, None, None, None
 
-    def screen(self, trader, metrics_table, max_requests=250, max_candle_history=10, rule2=False, tfs=None, max_candles_needed=231, v2=False):
+
+    def _get_stock_dfs(self, trader, tickers, tfs, daily_candles=350, rule2=False, v2=False):
+        tf_map = {1: "OneMinute", 5: "FiveMinutes", 15: "FifteenMinutes", 30: "HalfHour", 
+                  60: "OneHour", 240: "FourHours", 1440: "OneDay"}
+    
+        with ThreadPoolExecutor(max_workers=15) as executor:
+            results = []
+            for ticker in tickers:
+                for tf in tfs:
+                    start_datetime, end_datetime = Helper.datetime_from_tf(daily_candles, tf)
+                    results.append(executor.submit(trader.get_fast_stock_data, ticker, start_datetime, end_datetime, tf_map[tf], tf))
+            executor.shutdown(wait=True)
+        return results
+
+    def _clean_futures_results(self, futures_results):
+        clean_results, dirty_results = [], []
+        for futures_result in futures_results:
+            try:
+                clean_results.append(futures_result.result())
+            except:
+                dirty_results.append(futures_result)
+                continue
+        return clean_results, dirty_results
+        
+    def _assemble_partial_screener(self, df_futures, symbol_tf_df):
+        partial_screener = pd.DataFrame(columns=['ticker', 'tf', 'date', 'signal', 'how recent', '% change'])
+
+        for df, (ticker, tf) in zip(df_futures, symbol_tf_df.values):
+            try:
+                signal, x_many_candles_ago, rule, side = self._check_for_signals(df, self.strategy, max_candle_history=10, rule2=False, v2=True, enter=True)
+            except:
+                print(ticker,tf)
+            
+            if signal:
+                symbol = df['ticker'].iloc[0]
+                tf = df['tf'].iloc[0]
+                date = datetime.now() - timedelta(minutes=int(abs(x_many_candles_ago)*tf))
+                change_factor = float(df['close'].iloc[-1]/df['close'].iloc[x_many_candles_ago])
+                percentage_change = Helper.factor_to_percentage([change_factor])[0]
+                partial_screener = partial_screener.append(pd.DataFrame([[symbol, tf, date, (rule, side), x_many_candles_ago, percentage_change]],
+                                                    columns=['ticker', 'tf', 'date', 'signal', 'how recent', "% change"]))
+
+        partial_screener['most recent'] = partial_screener.groupby('ticker')['how recent'].transform('max')
+        partial_screener = partial_screener.set_index(['ticker', 'tf']).sort_values(
+            ['most recent', 'how recent'], ascending=[False, False])
+        return partial_screener
+    
+    def _load_reddit_mentions(self, crypto=True):
+        url = f"https://apewisdom.io/api/v1.0/filter/all-crypto/page/"
+        if not crypto:
+            url = f"https://apewisdom.io/api/v1.0/filter/all-stocks/page/"
+        
+        pages = requests.get(url + "0").json()['pages']
+        
+        df = pd.DataFrame()
+        
+        for page in range(1,pages):
+            js = requests.get(url + str(page)).json()
+            df = df.append(pd.json_normalize(js['results']))
+        return df.drop(['rank', 'rank_24h_ago'], axis=1)
+
+    def stock_screen(self, trader, tfs):
+        reddit_df = self._load_reddit_mentions(crypto=False)
+        tickers = reddit_df['ticker'][:]
+        ticker_tf_df = pd.DataFrame([(ticker, tf) for tf in tfs for ticker in tickers], columns = ['ticker','tf'])
+        self.futures_results = self._get_stock_dfs(trader, tickers, tfs)
+        self.clean_results, dirty_results = self._clean_futures_results(self.futures_results)
+        partial_screener = self._assemble_partial_screener(self.clean_results, ticker_tf_df)
+        master_screener = reddit_df.merge(partial_screener.reset_index(), on='ticker').set_index(['ticker','tf'])
+        return master_screener
+
+        
+
+    def screen(self, trader, metrics_table, tfs, max_requests=250, max_candle_history=10, rule2=False, max_candles_needed=231, v2=False):
         metrics_table = metrics_table[:]
         symbols = pd.DataFrame(metrics_table.index.unique(level=0), columns=['symbol'])
-        tfs = [tf for tf in tfs if tf in metrics_table.index.unique(level=1)]
-        if not tfs:
-            # tfs = metrics_table.index.unique(level=1)
-            tfs = [5, 15]
+        # tfs = [tf for tf in tfs if tf in metrics_table.index.unique(level=1)]
         tfs_df = pd.DataFrame(tfs, columns=['tf'])
         df_symbol_tf = symbols.merge(tfs_df, how='cross')
         max_candles_needed = max_candles_needed + max_candle_history + 1
@@ -98,7 +171,7 @@ class Screener:
 
         for df_future, symbol, tf in zip(results, df_symbol_tf['symbol'], df_symbol_tf['tf']):
             df = df_future.result()
-            signal, x_many_candles_ago, rule, side = self.check_for_signals(df, self.strategy, max_candle_history=10, rule2=rule2, v2=v2, enter=True)
+            signal, x_many_candles_ago, rule, side = self._check_for_signals(df, self.strategy, max_candle_history=10, rule2=rule2, v2=v2, enter=True)
 
             if signal:
                 try:
