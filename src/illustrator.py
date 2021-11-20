@@ -1,10 +1,13 @@
-import matplotlib.pyplot as plt
-import pandas as pd
-from fab_strategy import FabStrategy
-import mplfinance as mpf
-from helper import Helper
-import numpy as np
 from datetime import timedelta
+
+import matplotlib.pyplot as plt
+import mplfinance as mpf
+import numpy as np
+import pandas as pd
+
+from fab_strategy import FabStrategy
+from helper import Helper
+
 
 class Illustrator:
     """
@@ -41,7 +44,6 @@ class Illustrator:
 
     def add_sma_to_df(self, df):
         self.strategy.load_data(df)
-        self.strategy.update_moving_averages()
 
         df['green'] = self.strategy.green
         df['orange'] = self.strategy.orange

@@ -1,19 +1,22 @@
-from datetime import datetime
-from dataloader import _DataLoader
-from analyzer import Analyzer
-from fab_strategy import FabStrategy
-from trading_history import TradeHistory
-from trade import Trade
-from helper import Helper
-import pandas as pd
-from illustrator import Illustrator
-import numpy as np
-from functools import reduce
+import os
 import random
 import time
+from datetime import datetime
+from functools import reduce
 from threading import Thread
-from IPython.display import display, clear_output
-import os
+from typing import Union
+
+import numpy as np
+import pandas as pd
+from IPython.display import clear_output, display
+
+from analyzer import Analyzer
+from dataloader import _DataLoader
+from fab_strategy import FabStrategy
+from helper import Helper
+from illustrator import Illustrator
+from trade import Trade
+from trading_history import TradeHistory
 
 
 class Backtester:
@@ -102,7 +105,7 @@ class Backtester:
         self.tf = tf
         return self.tf
 
-    def set_date_range(self, start_date: str, end_date: str = None) -> (str, str):
+    def set_date_range(self, start_date: str, end_date: str = None) -> Union[str, str]:
         """
         Paramters:
         ------------
@@ -458,7 +461,6 @@ class Backtester:
 
         # Creating necessary moving averages from FabStrategy class
         strategy.load_data(df_tf)
-        strategy.update_moving_averages()
         # Iterating through every single data point and checking if rules apply.
         for row_index in range(231, len(df_tf) - 1):
             self.check_rule_1(strategy, row_index, list_of_str_dates)

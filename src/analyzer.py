@@ -53,7 +53,7 @@ class Analyzer:
         self.candle_volume_index = None
         self.candle_pps_index = None
 
-    def calculate_longest_run(self, trade_index: pd.DataFrame) -> Union(float, int):
+    def calculate_longest_run(self, trade_index: pd.DataFrame) -> Union[float, int]:
         """
         Takes a list of floats (e.g. [1.05, 0.98, 1.11, 1.01, 0.78] and
         calculates the longest consecutive chain of numbers greater than 1.
@@ -80,7 +80,7 @@ class Analyzer:
         longest_counter = max(longest_counter, current_counter)
         return longest_run, longest_counter
 
-    def calculate_longest_drawdown(self, trade_index: list(float)) -> Union(float, int):
+    def calculate_longest_drawdown(self, trade_index: list) -> Union[float, int]:
         """
         Takes a list of inputted trade results (e.g. [1.05, 0.98, 1.11, 1.01, 0.78] and
         calculates the longest consecutive chain of numbers less than 1.
