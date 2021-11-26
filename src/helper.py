@@ -1,10 +1,12 @@
 import math
 import time
 from datetime import datetime, timedelta
+from os import stat
 
 import dateparser
 import numpy as np
 import pandas as pd
+from ib_insync import util
 
 
 class Helper:
@@ -79,34 +81,78 @@ class Helper:
         return round(time.time() % 60, 1) == 0
 
     @staticmethod
-    def into_dataframe(lst: list, symbol, tf) -> pd.DataFrame:
+    def into_dataframe(data: list, symbol, tf, qtrade=False) -> pd.DataFrame:
         """Converts Binance response list into dataframe"""
         crypto = 'USDT' in symbol
 
         if crypto:
-            df = pd.DataFrame(lst, columns=["timestamp", "open", "high", "low", "close", "volume",
+            df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume",
                                             "", "", "", "", "", ""])
             df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(
                 float)
             df['date'] = Helper.millisecond_timestamp_to_datetime(df['timestamp'])
-            df['symbol'] = [symbol]*len(lst)
-            df['tf'] = [tf]*len(lst)
-        else:
-            df = pd.DataFrame(lst).drop('start', axis=1).rename(columns = {'end': 'date'})
-            df['date'] = [pd.Timestamp(date).tz_localize(None) for date in df['date']]
-            df['timestamp'] = Helper.datetime_to_millisecond_timestamp(df['date'])
-            df['ticker'] = [symbol]*len(lst)
-            df['tf'] = [tf]*len(lst)
-        
 
-        return df[['ticker', 'tf', 'timestamp', 'date', 'open', 'high','low', 'close', 'volume']].set_index("timestamp")
+        else:
+            if qtrade:
+                # Questrade Data Handling 
+                df = pd.DataFrame(data).drop('start', axis=1).rename(columns = {'end': 'date'})
+                df['date'] = [pd.Timestamp(date).tz_localize(None) for date in df['date']]
+                df['timestamp'] = Helper.datetime_to_millisecond_timestamp(df['date'])
+            else:
+                # IBKR Data Handling
+                df = util.df(data).drop(['average', 'barCount'], axis=1)
+                df['timestamp'] = Helper.datetime_to_millisecond_timestamp(df['date'])
+
+        df['symbol'] = [symbol]*len(data)
+        df['tf'] = [tf]*len(data)
+
+        return df[['symbol', 'tf', 'timestamp', 'date', 'open', 'high','low', 'close', 'volume']].set_index("timestamp")
 
     @staticmethod
-    def datetime_from_tf(daily_candles, tf, max_candles_needed=235):
-        how_many_days_ago = max_candles_needed*tf//daily_candles + 1
-        start_time, end_time = f"{how_many_days_ago} days ago" , 'now'
-        parsed_start, parsed_end = dateparser.parse(start_time), dateparser.parse(end_time)
-        parsed_start, parsed_end = parsed_start.strftime('%Y-%m-%d %H:%M:%S.%f'), parsed_end.strftime('%Y-%m-%d %H:%M:%S.%f')
+    def finviz_market_cap_str_to_float(df):
+        new_list = []
+        for market_cap in df['Market Cap']:
+            if 'B' in market_cap:
+                new_list.append(float(market_cap[:-1])*10**9)
+            elif 'M' in market_cap:
+                new_list.append(float(market_cap[:-1])*10**6)
+            else:
+                new_list.append(0)
+        df['Market Cap'] = new_list
+        return df
+
+    from functools import wraps
+
+    @staticmethod
+    def awaitify(sync_func):
+        """Wrap a synchronous callable to allow ``await``'ing it"""
+        @wraps(sync_func)
+        async def async_func(*args, **kwargs):
+            return sync_func(*args, **kwargs)
+        return async_func
+
+    @staticmethod
+    def timeit(method):
+        def timed(*args, **kw):
+            ts = time.time()
+            result = method(*args, **kw)
+            te = time.time()
+            if 'log_time' in kw:
+                name = kw.get('log_name', method.__name__.upper())
+                kw['log_time'][name] = int((te - ts) * 1000)
+            else:
+                print('%r  %2.2f ms' % \
+                    (method.__name__, (te - ts) * 1000))
+            return result
+        return timed
+    
+    @staticmethod
+    def datetime_from_tf(tf, daily_1m_candles=525, max_candles_needed=235, qtrade = False):
+        how_many_days_ago = max_candles_needed*tf//daily_1m_candles + 1
+        now = datetime.now()
+        parsed_start, parsed_end = now-timedelta(days=how_many_days_ago), now
+        if qtrade:
+            parsed_start, parsed_end = parsed_start.strftime('%Y-%m-%d %H:%M:%S.%f'), parsed_end.strftime('%Y-%m-%d %H:%M:%S.%f')
         return parsed_start, parsed_end
 
     @staticmethod
@@ -114,7 +160,7 @@ class Helper:
         return [datetime.fromtimestamp(second_timestamp / 1000) for second_timestamp in timestamp_list]
 
     def datetime_to_millisecond_timestamp(datetime_list):
-        return (datetime_list - pd.Timestamp("1970-01-01").tz_localize(None)) // pd.Timedelta('1s')
+        return (pd.to_datetime(datetime_list) - pd.Timestamp("1970-01-01").tz_localize(None)) // pd.Timedelta('1s')
 
     @staticmethod
     def calculate_minute_disparity(df: pd.DataFrame, tf: int) -> float:
