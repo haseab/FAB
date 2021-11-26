@@ -1,3 +1,4 @@
+import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -22,6 +23,52 @@ class Screener:
         self.loader = _DataLoader(db=db, ib=False)
         self.master_screener = pd.DataFrame()
         self.strategy = FabStrategy()
+
+######################################################################################################################
+    async def _async_get_questrade_dfs(self, trader, symbols, tfs, daily_candles=350, rule2=False, v2=False):
+        tf_map = {1: "OneMinute", 5: "FiveMinutes", 15: "FifteenMinutes", 30: "HalfHour", 
+                  60: "OneHour", 240: "FourHours", 1440: "OneDay"}
+        results = []
+        for symbol in symbols:
+            for tf in tfs:
+                start_datetime, end_datetime = Helper.datetime_from_tf(tf)
+                coroutine = trader.loader._async_get_fast_questrade_data(symbol, start_datetime, end_datetime, tf_map[tf], tf)
+                results.append(coroutine)
+        results = await asyncio.gather(*results, return_exceptions=True)
+        return results
+
+    async def _async_get_ibkr_dfs(self, trader, symbols, tfs, daily_candles=350, rule2=False, v2=False):
+        tf_map = {1: "1 min", 5: "5 mins", 15: "15 mins", 30: "30 mins", 60: "1 hour", 240: "4 hours", 1440: "1 day"}  
+        count, count2, results = 0, 0, []
+        start = time.perf_counter()
+        for symbol in symbols:
+            for tf in tfs:
+                count, count2 = count+1, count2+1 
+                if count2 > 5:
+                    if time.perf_counter() - start > 10:
+                        print(time.perf_counter()-start)
+                        print('sleeping')
+                        time.sleep(6)
+                        count2, start = 0, time.perf_counter()
+                    elif time.perf_counter() - start > 5:
+                        print(time.perf_counter()-start)
+                        print('sleeping')
+                        time.sleep(3)
+                        count2, start = 0, time.perf_counter()
+                if count > 45:
+                    time.sleep(1)
+                start_datetime, end_datetime = Helper.datetime_from_tf(tf)
+                duration = (end_datetime - start_datetime).days + 1
+                try:
+                    coroutine = await trader.loader._async_get_fast_ibkr_data(symbol, duration, end_datetime, tf_map[tf], tf)
+                    results.append(coroutine)
+                except Exception as e:
+                    results.append(e)
+        # results = await asyncio.gather(*results, return_exceptions=True)
+        return results
+
+#####################################################################################################################
+
 
     def _check_for_signals(self, df, strategy, enter=False, exit=False, rule2=False, max_candle_history=10, v2=False):
         if enter and exit:
@@ -75,17 +122,23 @@ class Screener:
 
         return False, None, None, None
 
+    def _get_questrade_dfs(self, trader, symbols, tfs, daily_candles=250, rule2=False, v2=False):
 
-    def _get_stock_dfs(self, trader, tickers, tfs, daily_candles=350, rule2=False, v2=False):
         tf_map = {1: "OneMinute", 5: "FiveMinutes", 15: "FifteenMinutes", 30: "HalfHour", 
                   60: "OneHour", 240: "FourHours", 1440: "OneDay"}
-    
-        with ThreadPoolExecutor(max_workers=15) as executor:
+
+        with ThreadPoolExecutor(max_workers=25) as executor:
             results = []
-            for ticker in tickers:
+            for symbol in symbols:
                 for tf in tfs:
-                    start_datetime, end_datetime = Helper.datetime_from_tf(daily_candles, tf)
-                    results.append(executor.submit(trader.get_fast_stock_data, ticker, start_datetime, end_datetime, tf_map[tf], tf))
+                    start_datetime, end_datetime = Helper.datetime_from_tf(tf, qtrade=True, daily_1m_candles=daily_candles)
+                    # duration = (end_datetime - start_datetime).days + 1
+                    future = executor.submit(trader.loader._get_fast_questrade_data, symbol, start_datetime, end_datetime, tf_map[tf], tf)
+                    try:
+                        future.result()
+                    except:
+                        time.sleep(0.5)
+                    results.append(future)
             executor.shutdown(wait=True)
         return results
 
@@ -93,6 +146,10 @@ class Screener:
         clean_results, dirty_results = [], []
         for futures_result in futures_results:
             try:
+                result = futures_result.result()
+                symbol = result.iloc[0,0]
+                tf = result.iloc[0,1]
+                length = len(result)
                 clean_results.append(futures_result.result())
             except:
                 dirty_results.append(futures_result)
@@ -100,32 +157,32 @@ class Screener:
         return clean_results, dirty_results
         
     def _assemble_partial_screener(self, df_futures, symbol_tf_df):
-        partial_screener = pd.DataFrame(columns=['ticker', 'tf', 'date', 'signal', 'how recent', '% change'])
+        partial_screener = pd.DataFrame(columns=['symbol', 'tf', 'date', 'signal', 'how recent', '% change'])
 
-        for df, (ticker, tf) in zip(df_futures, symbol_tf_df.values):
+        for df, (symbol, tf) in zip(df_futures, symbol_tf_df.values):
             try:
                 signal, x_many_candles_ago, rule, side = self._check_for_signals(df, self.strategy, max_candle_history=10, rule2=False, v2=True, enter=True)
             except:
-                print(ticker,tf)
+                print(symbol,tf)
             
             if signal:
-                symbol = df['ticker'].iloc[0]
+                symbol = df['symbol'].iloc[0]
                 tf = df['tf'].iloc[0]
                 date = datetime.now() - timedelta(minutes=int(abs(x_many_candles_ago)*tf))
                 change_factor = float(df['close'].iloc[-1]/df['close'].iloc[x_many_candles_ago])
                 percentage_change = Helper.factor_to_percentage([change_factor])[0]
                 partial_screener = partial_screener.append(pd.DataFrame([[symbol, tf, date, (rule, side), x_many_candles_ago, percentage_change]],
-                                                    columns=['ticker', 'tf', 'date', 'signal', 'how recent', "% change"]))
+                                                    columns=['symbol', 'tf', 'date', 'signal', 'how recent', "% change"]))
 
-        partial_screener['most recent'] = partial_screener.groupby('ticker')['how recent'].transform('max')
-        partial_screener = partial_screener.set_index(['ticker', 'tf']).sort_values(
+        partial_screener['most recent'] = partial_screener.groupby('symbol')['how recent'].transform('max')
+        partial_screener = partial_screener.set_index(['symbol', 'tf']).sort_values(
             ['most recent', 'how recent'], ascending=[False, False])
         return partial_screener
     
     def _load_reddit_mentions(self, crypto=True):
         url = f"https://apewisdom.io/api/v1.0/filter/all-crypto/page/"
         if not crypto:
-            url = f"https://apewisdom.io/api/v1.0/filter/all-stocks/page/"
+            url = f"https://apewisdom.io/api/v1.0/filter/all-stocks/page/" 
         
         pages = requests.get(url + "0").json()['pages']
         
@@ -136,17 +193,14 @@ class Screener:
             df = df.append(pd.json_normalize(js['results']))
         return df.drop(['rank', 'rank_24h_ago'], axis=1)
 
-    def stock_screen(self, trader, tfs):
-        reddit_df = self._load_reddit_mentions(crypto=False)
-        tickers = reddit_df['ticker'][:]
-        ticker_tf_df = pd.DataFrame([(ticker, tf) for tf in tfs for ticker in tickers], columns = ['ticker','tf'])
-        self.futures_results = self._get_stock_dfs(trader, tickers, tfs)
+    def stock_screen(self, trader, all_stocks_df, tfs):
+        symbols = all_stocks_df['Ticker'].values
+        symbol_tf_df = pd.DataFrame([(symbol, tf) for tf in tfs for symbol in symbols], columns = ['symbol','tf'])
+        self.futures_results = self._get_questrade_dfs(trader, symbols, tfs)
         self.clean_results, dirty_results = self._clean_futures_results(self.futures_results)
-        partial_screener = self._assemble_partial_screener(self.clean_results, ticker_tf_df)
-        master_screener = reddit_df.merge(partial_screener.reset_index(), on='ticker').set_index(['ticker','tf'])
-        return master_screener
-
-        
+        partial_screener = self._assemble_partial_screener(self.clean_results, symbol_tf_df)
+        # master_screener = reddit_df.merge(partial_screener.reset_index(), on='symbol').set_index(['symbol','tf'])
+        return partial_screener
 
     def screen(self, trader, metrics_table, tfs, max_requests=250, max_candle_history=10, rule2=False, max_candles_needed=231, v2=False):
         metrics_table = metrics_table[:]
