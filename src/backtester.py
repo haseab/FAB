@@ -123,6 +123,7 @@ class Backtester:
         symbol = self.symbol if not symbol else symbol
 
         if all_data:
+            self.symbol = symbol
             df = self.loader.sql.SELECT(f"* FROM {table_name} WHERE SYMBOL = '{symbol}' AND TIMEFRAME = '1' ORDER BY timestamp", cursor)
 
         else:
