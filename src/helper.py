@@ -50,7 +50,7 @@ class Helper:
 
     @staticmethod
     def slope(series, i):
-        return (series[i]-series[i-4]) / 4
+        return (series[i]-series[i-3]) / 3
 
     @staticmethod
     def max_index(index_list):
@@ -81,9 +81,18 @@ class Helper:
         return round(time.time() % 60, 1) == 0
 
     @staticmethod
+    def find_greatest_divisible_timeframe(tf):
+        divisible_list = [1, 3, 5, 15, 30, 60, 120, 240, 360, 480]
+        for divisible_tf in reversed(divisible_list):
+            if tf % divisible_tf == 0:
+                return divisible_tf
+        return False
+
+
+    @staticmethod
     def into_dataframe(data: list, symbol, tf, qtrade=False) -> pd.DataFrame:
         """Converts Binance response list into dataframe"""
-        crypto = 'USDT' in symbol
+        crypto = 'USDT' in symbol or 'BUSD' in symbol
 
         if crypto:
             df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume",
@@ -122,14 +131,6 @@ class Helper:
         return df
 
     from functools import wraps
-
-    @staticmethod
-    def awaitify(sync_func):
-        """Wrap a synchronous callable to allow ``await``'ing it"""
-        @wraps(sync_func)
-        async def async_func(*args, **kwargs):
-            return sync_func(*args, **kwargs)
-        return async_func
 
     @staticmethod
     def timeit(method):

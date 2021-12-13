@@ -48,7 +48,7 @@ class Trader():
     """
     max_candle_history = 231
 
-    def __init__(self, qtrade=False, db=False):
+    def __init__(self, qtrade=False, db=False, ib=False):
         self.start = False
         self.binance = Client()
         self.ftx = FtxClient()
@@ -58,7 +58,7 @@ class Trader():
         self.executor = TradeExecutor()
         self.symbol = None
         self.trade_metrics = None
-        self.loader = _DataLoader(db=db, qtrade=qtrade, ib=False)
+        self.loader = _DataLoader(db=db, qtrade=qtrade, ib=ib)
         self.illustrator = Illustrator()
         self.strategy = FabStrategy()
         self.df = None
@@ -173,11 +173,11 @@ class Trader():
         now = time.time()
         df = pd.DataFrame()
 
-        crypto = 'USDT' in symbol
+        crypto = 'USDT' in symbol or 'BUSD' in symbol
 
         if crypto:
             ranges = Helper.determine_candle_positions(max_candles_needed, tf)
-
+            print(ranges)
             for i in range(len(ranges)):
                 try:
                     df = df.append(self.loader._get_binance_futures_candles(symbol, int(ranges[i]), int(ranges[i + 1]), now))
@@ -195,10 +195,6 @@ class Trader():
             parsed_start, parsed_end = parsed_start.strftime('%Y-%m-%d %H:%M:%S.%f'), parsed_end.strftime('%Y-%m-%d %H:%M:%S.%f')
             data = self.loader.qtrade.get_historical_data(symbol, parsed_start, parsed_end, tf_map[tf])
             return Helper.into_dataframe(data, symbol=symbol, tf=tf)
-    
-    def get_fast_stock_data(self, symbol, start_datetime, end_datetime, tf_str, tf):
-        data = self.loader.qtrade.get_historical_data(symbol, start_datetime, end_datetime, tf_str)
-        return Helper.into_dataframe(data, symbol=symbol, tf=tf)
 
     def _update_data(self, diff: int, symbol: str, ) -> None:
         """
@@ -245,7 +241,7 @@ class Trader():
 
     def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 231, drop_last_row=False) -> pd.DataFrame:
         """
-        Set Symbol of the ticker and load the necessary data with the given timeframe to trade it
+        Set Symbol of the symbol and load the necessary data with the given timeframe to trade it
 
         Parameters:
         ------------
@@ -262,10 +258,13 @@ class Trader():
             # Fetching data from Binance if it matches the eligible timeframe, as it will be faster
             df = Helper.into_dataframe(
                 self.binance.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time), symbol=symbol, tf=tf)
+            df = df.reset_index().set_index(['symbol', 'tf', 'timestamp'])
             if drop_last_row:
                 df.drop(df.tail(1).index, inplace=True)
         else:
-            # If it doesn't match Binance available timeframes, it must be transformed after fetching 1m data.
+            # If it doesn't match Binance available timeframes, it must be transformed after fetching the least divisible timeframe data.
+
+            binance_tf = Helper.find_greatest_divisible_timeframe(tf)
             df = self.get_necessary_data(symbol, tf, max_candles_needed)
             df = self.loader._timeframe_setter(df, tf, drop_last_row=drop_last_row)
 
@@ -379,7 +378,7 @@ class Trader():
         for symbol in positions:
             position_size = float(symbol['positionAmt'])
             if position_size != 0:
-                ticker = symbol['symbol']
+                symbol = symbol['symbol']
                 side = 'BUY' if position_size > 0 else 'SELL'
                 enter_price = float(symbol['entryPrice'])
                 last_price = float(symbol['markPrice'])
@@ -388,7 +387,7 @@ class Trader():
                 elif side == 'BUY':
                     pnl = Helper.calculate_long_profitability(enter_price, last_price, 1)
                 usd_size = abs(round(position_size * enter_price, 2))
-                trade_progress = trade_progress.append(pd.DataFrame([[ticker, side, enter_price, abs(position_size), usd_size, last_price, pnl]],
+                trade_progress = trade_progress.append(pd.DataFrame([[symbol, side, enter_price, abs(position_size), usd_size, last_price, pnl]],
                                                               columns = ['symbol', 'side', 'enter_price', 'size', 'usd size', 'current_price', 'pnl']),
                                                  ignore_index=True)
         if printout:
