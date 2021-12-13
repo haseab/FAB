@@ -200,6 +200,9 @@ class Analyzer:
         self.peak_index = peak_long_index.append(peak_short_index).set_index('tid').sort_values('tid')
         return self
 
+    def get_win_loss_rate(self,num_trades_won, num_trades_lost):
+        return round(num_trades_won/(num_trades_won+num_trades_lost),3)
+
     def get_trade_history(self):
         return self.trade_history
 
@@ -247,7 +250,7 @@ class Analyzer:
 
     def calculate_profitability(self, trade_index, median=True):
         if median:
-            return trade_index['profitability'].median()
+            return trade_index['profitability'].product()
         return trade_index['profitability']
 
     def get_profit_rate(self, candle_index: pd.Series, mean=True):
