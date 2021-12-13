@@ -1,4 +1,5 @@
 import json
+import random
 import time
 from datetime import datetime
 
@@ -34,7 +35,6 @@ class _DataLoader:
 
     def __init__(self, db=False, qtrade=False, ib=False):
         self.ib = IB()
-        # self.binance = Client()
         if qtrade:
             self.qtrade = Questrade(token_yaml='C:/Users/haseab/Desktop/Python/PycharmProjects/FAB/local/Workers/access_token.yml', save_yaml=True)
             print('Connected to Questrade API')
@@ -44,6 +44,26 @@ class _DataLoader:
         if ib:
             print(self.ib.connect('127.0.0.1', 7496, 104))
 
+    def _randomly_delete_rows(self, df, percentage_of_data=0.10):
+        index_list = []
+        for _ in range(len(df)//(1/percentage_of_data)):
+            index = random.choice(df.index)
+            if index not in index_list:
+                index_list.append(index)
+
+        return df.drop(index_list)  
+
+    def _clean_1m_data(self, df):
+        start_date = df['timestamp'].iloc[0]
+        end_date = df['timestamp'].iloc[-1]
+
+        full_timestamps = pd.DataFrame([time for time in range(start_date, end_date + 60, 60)], columns=['timestamp'])
+        full_df = full_timestamps.merge(df.reset_index(), on='timestamp', how='left')
+        full_df['volume'] = full_df['volume'].fillna(0.001)
+        filled_df = full_df.fillna(method='ffill')
+        filled_df['date'] = [datetime.fromtimestamp(timestamp) for timestamp in filled_df['timestamp'].values]
+        return filled_df
+
     def _load_csv_v2(self, csv_url):
         tf = csv_url.split(' ')[2][:-1]
         symbol = csv_url.split(' ')[1]
@@ -51,14 +71,14 @@ class _DataLoader:
         data = pd.read_csv(csv_url)
         data['timestamp'] = [int(timestamp/1000) for timestamp in data['timestamp']]
         data['date'] = [datetime.fromtimestamp(timestamp) for timestamp in data['timestamp'].values]
-        data['timeframe'] = [tf]*len(data)
+        data['tf'] = [tf]*len(data)
         data['symbol'] = [symbol]*len(data)
 
         data[["open", "high", "low", "close", "volume"]] = data[["open", "high", "low", "close", "volume"]].astype(
             float)
 
-        data = data[['symbol', 'timeframe', 'timestamp', 'date', 'open', 'high', 'low', 'close', 'volume']]
-        return data.set_index(["symbol", "timeframe", "timestamp"])
+        data = data[['symbol', 'tf', 'timestamp', 'date', 'open', 'high', 'low', 'close', 'volume']]
+        return data.set_index(["symbol", "tf", "timestamp"])
 
     def _load_csv(self, csv_url: str) -> pd.DataFrame:
         """Function used to load 1-minute historical candlestick data with a given csv url
@@ -197,7 +217,7 @@ class _DataLoader:
         df['low'] = [min(dataframe['low'][i:tf + i]) for i in range(shift, len(dataframe['low']), tf)]
         df['volume'] = [sum(dataframe['volume'][i:tf + i]) for i in range(shift, len(dataframe['volume']), tf)]
 
-        df['timeframe'] = [tf]*len(df['volume'])
+        df['tf'] = [tf]*len(df['volume'])
 
         # Selecting every nth value in the list, where n is the timeframe
         df['close'] = [dataframe['close'].iloc[i:tf + i].iloc[-1] for i in range(shift, len(dataframe['close']), tf)]
@@ -207,7 +227,7 @@ class _DataLoader:
         if drop_last_row:
             df.drop(df.tail(1).index, inplace=True)
 
-        return df.reset_index().set_index(['symbol', 'timeframe', 'timestamp'])
+        return df.reset_index().set_index(['symbol', 'tf', 'timestamp'])
         
     def _get_fast_questrade_data(self, symbol, start_datetime, end_datetime, tf_str, tf):
         data = self.qtrade.get_historical_data(symbol, start_datetime, end_datetime, tf_str)
@@ -277,14 +297,14 @@ class _DataLoader:
         ##Fixing Columns
         df_symbol['timestamp'] = [int(timestamp / 1000) for timestamp in df_symbol['timestamp']]
         df_symbol['date'] = [datetime.fromtimestamp(timestamp) for timestamp in df_symbol['timestamp'].values]
-        df_symbol['timeframe'] = [tf[:-1]] * len(df_symbol)
+        df_symbol['tf'] = [tf[:-1]] * len(df_symbol)
         df_symbol['symbol'] = [symbol] * len(df_symbol)
 
         df_symbol[["open", "high", "low", "close", "volume"]] = df_symbol[
             ["open", "high", "low", "close", "volume"]].astype(
             float)
-        df_symbol = df_symbol[['symbol', 'timeframe', 'timestamp', 'date', 'open', 'high', 'low', 'close', 'volume']]
-        df_symbol = df_symbol.set_index(["symbol", "timeframe", "timestamp"])
+        df_symbol = df_symbol[['symbol', 'tf', 'timestamp', 'date', 'open', 'high', 'low', 'close', 'volume']]
+        df_symbol = df_symbol.set_index(["symbol", "tf", "timestamp"])
 
         start_date = str(df_symbol.iloc[0, 0])[:10]
 
