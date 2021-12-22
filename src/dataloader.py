@@ -4,10 +4,12 @@ import time
 from datetime import datetime
 
 import dateparser
+import numpy as np
 import pandas as pd
 import qtrade
 from binance.client import Client
-from ib_insync import *
+from ib_insync import IB, util
+from pandas.core import base
 from qtrade import Questrade
 
 from helper import Helper
@@ -35,6 +37,7 @@ class _DataLoader:
 
     def __init__(self, db=False, qtrade=False, ib=False):
         self.ib = IB()
+        self.binance = Client()
         if qtrade:
             self.qtrade = Questrade(token_yaml='C:/Users/haseab/Desktop/Python/PycharmProjects/FAB/local/Workers/access_token.yml', save_yaml=True)
             print('Connected to Questrade API')
@@ -92,7 +95,7 @@ class _DataLoader:
         data = data[['date', 'open', 'high', 'low', 'close', 'volume']]
         return data
 
-    def _get_binance_futures_candles(self, symbol: str, start_minutes_ago: int, end_minutes_ago: int = 0,
+    def _get_binance_futures_candles(self, symbol: str, tf: int, start_candles_ago: int, end_candles_ago: int = 0,
                                      now: float = None) -> pd.DataFrame:
         """
         Provides a method for getting a set of candlestick data without inputting start and end date.
@@ -111,13 +114,17 @@ class _DataLoader:
             now = time.time()
 
         # Defining params to put in exchange API call
+        map_tf = {1: "1m", 3: "3m", 5: "5m", 15: "15m", 30: "30m", 60: "1h", 120: "2h", 240: "4h", 360: "6h", 480: "8h"}
+        start_minutes_ago = start_candles_ago*tf
+        end_minutes_ago = end_candles_ago*tf
+
         start_time = Helper().minutes_ago_to_timestamp(start_minutes_ago,now, adjust=self.SECOND_TO_MILLISECOND)
         end_time = Helper().minutes_ago_to_timestamp(end_minutes_ago, now, adjust=self.SECOND_TO_MILLISECOND)
-        num_candles = abs(start_minutes_ago - end_minutes_ago)
+        num_candles = abs(start_candles_ago - end_candles_ago)
 
-        data = self.binance.futures_klines(symbol=symbol, interval="1m", startTime=start_time, endTime=end_time, limit=num_candles)
+        data = self.binance.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time, endTime=end_time, limit=num_candles)
 
-        return Helper.into_dataframe(data, symbol=symbol, tf=1)
+        return Helper.into_dataframe(data, symbol=symbol, tf=tf)
     
     def _get_ibkr_stocks_candles(self, symbol: str, tf: int, start_time, end_time):
         tf_map = {1: "1 min", 5: "5 mins", 15: "15 mins", 30: "30 mins", 
@@ -162,7 +169,7 @@ class _DataLoader:
 
         return dataframe[start_index:end_index+1]
 
-    def _timeframe_setter(self, dataframe: pd.DataFrame, tf: int, shift: int = 0, drop_last_row=True) -> pd.DataFrame:
+    def _timeframe_setter(self, dataframe: pd.DataFrame, skip: int, shift: int = 0, keep_last_row=False) -> pd.DataFrame:
         """ Vertical way of abstracting data
         Converts minute candlestick data into the timeframe(tf) of choice.
         Parameters
@@ -199,32 +206,43 @@ class _DataLoader:
 
         :return dataframe
         """
-        if tf == 1:
-            return dataframe
 
+        if skip == 1:
+            return dataframe
+        base_tf = int(dataframe['tf'].iloc[0])
+            
         if shift == None:
             # This is making sure that there it shifts so that the last tf candle includes the last 1-minute candle
-            shift = tf - len(dataframe) % tf - 1
+            shift = skip - len(dataframe) % skip - 1
 
         dataframe[["open", "high", "low", "close", "volume"]] = dataframe[
             ["open", "high", "low", "close", "volume"]].astype(float)
 
         # Creating a new dataframe so that the size of the rows of the new dataframe will be the same as the new columns
-        df = dataframe.iloc[shift::tf].copy()
+        df = dataframe.iloc[shift::skip].copy()
 
-        # Iterating through candle data, and abstracting based on the highest, lowest and sum respectively.
-        df['high'] = [max(dataframe['high'][i:tf + i]) for i in range(shift, len(dataframe['high']), tf)]
-        df['low'] = [min(dataframe['low'][i:tf + i]) for i in range(shift, len(dataframe['low']), tf)]
-        df['volume'] = [sum(dataframe['volume'][i:tf + i]) for i in range(shift, len(dataframe['volume']), tf)]
+        rolled_df = dataframe.rolling(skip)
 
-        df['tf'] = [tf]*len(df['volume'])
+        high = rolled_df['high'].max()
+        low = rolled_df['low'].min()
+        volume = rolled_df['volume'].sum()
+        close = dataframe.copy()['close']
 
+        # Abstracting based on the highest, lowest and sum respectively.
+        df['high'] = np.append(high.iloc[shift+skip::skip].values, high.iloc[-1])
+        df['low'] = np.append(low.iloc[shift+skip::skip].values, low.iloc[-1])
+        df['volume'] = np.append(volume.iloc[shift+skip::skip].values, volume.iloc[-1])
         # Selecting every nth value in the list, where n is the timeframe
-        df['close'] = [dataframe['close'].iloc[i:tf + i].iloc[-1] for i in range(shift, len(dataframe['close']), tf)]
-        # df['close'] = dataframe[tf+shift-1::tf].append(dataframe.iloc[-1:])['close'].values
+        try:
+            df['close'] = close.iloc[shift+skip-1::skip].values
+        except ValueError as e:
+            df['close'] = np.append(close.iloc[shift+skip-1::skip].values, close.iloc[-1])
 
+        tf = base_tf*skip
+        df['tf'] = [tf]*len(df['volume'])
+        
         # Dropping the last value, this gets rid of the candle that isn't complete until the end of the tf
-        if drop_last_row:
+        if not keep_last_row:
             df.drop(df.tail(1).index, inplace=True)
 
         return df.reset_index().set_index(['symbol', 'tf', 'timestamp'])
@@ -289,8 +307,14 @@ class _DataLoader:
         print('got data', len(data))
         return Helper.into_dataframe(data, symbol=symbol, tf=tf, qtrade=True)
 
-    def get_all_binance_data(self, symbol, start_date, end_date=None, tf='1m'):
-        list_symbol = self.binance.get_historical_klines(symbol=symbol, interval=tf, start_str=start_date)
+    def get_binance_candles(self, symbol, tf, start_date, end_date=None):
+        map_tf = {1: "1m", 3: "3m", 5: "5m", 15: "15m", 30: "30m", 60: "1h", 120: "2h", 240: "4h", 360: "6h", 480: "8h"}
+        lst = self.binance.get_historical_klines(symbol=symbol, interval=map_tf[tf], start_str=start_date)
+        return Helper.into_dataframe(lst, symbol=symbol, tf=tf)
+
+    def get_all_binance_data(self, symbol, tf, start_date, end_date=None):
+        map_tf = {1: "1m", 3: "3m", 5: "5m", 15: "15m", 30: "30m", 60: "1h", 120: "2h", 240: "4h", 360: "6h", 480: "8h"}
+        list_symbol = self.binance.get_historical_klines(symbol=symbol, interval=map_tf[tf], start_str=start_date)
         df_symbol = pd.DataFrame(list_symbol)
         df_symbol.columns = ["timestamp", "open", "high", "low", "close", "volume", "timestamp_end", "", "", "", "", ""]
 
@@ -308,7 +332,7 @@ class _DataLoader:
 
         start_date = str(df_symbol.iloc[0, 0])[:10]
 
-        string = f"Binance {symbol} {tf} data from {start_date} to {str(datetime.now())[:10]}.csv"
+        string = f"Binance {symbol} {tf}m data from {start_date} to {str(datetime.now())[:10]}.csv"
         print(string)
         # df_symbol.to_csv(string)
 
