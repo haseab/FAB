@@ -60,13 +60,15 @@ class Illustrator:
 
         return df[231:]
 
-    def _plot_optimal_testing(self, profit, index):
-        print(profit.loc[index]['mean'].sort_values(ascending=False).head())
-        profit.loc[index].plot(figsize=(20,6), xticks=range(35,350,10))
+    def _plot_optimal_testing(self, profit, index=None, tf=True):
+        if tf:
+            print(profit.loc[index]['mean'].sort_values(ascending=False).head())
+            profit.loc[index].plot(figsize=(20,6), xticks=range(35,350,10))
+        else:
+            print(profit['mean'].sort_values(ascending=False).head())
+            profit.plot(figsize=(20,6), xticks=range(0,14,1))
 
-    def plot_optimal_testing(self, rule, side, index):
-        df = pd.read_csv(f'C:\\Users\\haseab\\Desktop\\Python\\PycharmProjects\\FAB\\src\\Complete Backtests\\{rule} {side} Long Complete Backtest.csv')
-
+    def plot_optimal_tf_testing(self, df, index):
         new = df.set_index(["delay", "symbol", "tf"])[['win loss rate', 'profitability', 'amount of data']] 
         new_df = new.sort_values(['delay', 'symbol', 'tf'])
 
@@ -75,7 +77,21 @@ class Illustrator:
         profit = new_df.reset_index().pivot(index=['delay', 'tf'], columns='symbol')['profitability']
 
         profit['mean'] = [profit.loc[index].median() for index in profit.index]
-        return self._plot_optimal_testing(profit, index)
+        return self._plot_optimal_testing(profit, index, tf=True)
+
+    def plot_optimal_delay_testing(self, df):
+        df = df[df['profitability']>1]
+        df = df[df['amount of data'] > 5]
+        new = df.set_index(["delay", "symbol"])[['win loss rate', 'pnl/trade', 'amount of data']] 
+        new_df = new.sort_values(['delay', 'symbol'])
+
+        win_loss = new_df.reset_index().pivot(index='delay', columns='symbol')['win loss rate']
+        win_loss['mean'] = [win_loss.loc[index].median() for index in win_loss.index]
+        profit = new_df.reset_index().pivot(index='delay', columns='symbol')['pnl/trade']
+
+        profit['mean'] = [profit.loc[index].median() for index in profit.index]
+        self.testy = profit
+        return self._plot_optimal_testing(profit, tf=False)
 
     def prepare_trade_graph_data(self, df_th, df_tf_candles, tid, tf, data_only=False, flat=False, adjust_left_view=29, adjust_right_view=10, extra_mas=False, save=False):
         start_datetime = df_th.loc[tid, 'enter_date']
