@@ -1,8 +1,10 @@
-from helper import Helper
-from dataloader import _DataLoader
 from datetime import datetime
-from trade import Trade
+
 import pandas as pd
+
+from dataloader import _DataLoader
+from helper import Helper
+from trade import Trade
 from trading_history import TradeHistory
 
 
@@ -90,7 +92,7 @@ class TradeExecutor:
 
         for symbol, side in symbol_side_pair:
             precision = [dic["quantityPrecision"] for dic in futures_info['symbols'] if dic['symbol'] == symbol][0]
-            last_price = self.loader._get_binance_futures_candles(symbol, 2).iloc[-1, 3]
+            last_price = self.loader._get_binance_futures_candles(symbol, tf=1, start_candles_ago=2).iloc[-1, 3]
             enter_market_params = {
                 'symbol': symbol,
                 'side': self.inverse_dic[side],

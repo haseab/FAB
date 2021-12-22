@@ -1,10 +1,12 @@
-import mysql.connector
-import json
 import asyncio
+import json
+import time
+
 import asyncpg
+import mysql.connector
 import pandas as pd
 import psycopg2
-import time
+
 
 class SqlMapper:
     def __init__(self):
