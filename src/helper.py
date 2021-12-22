@@ -32,6 +32,12 @@ class Helper:
             time.sleep(seconds / partition)
 
     @staticmethod
+    def remove_column_underscore(df):
+        new_columns = [' '.join(column.split('_')) for column in df.columns]
+        df.columns = new_columns
+        return df
+
+    @staticmethod
     def current_minute_datetime():
         now = datetime.now()
         now = datetime(year=now.year, month=now.month, day=now.day, hour=now.hour, minute=now.minute)
@@ -82,12 +88,11 @@ class Helper:
 
     @staticmethod
     def find_greatest_divisible_timeframe(tf):
-        divisible_list = [1, 3, 5, 15, 30, 60, 120, 240, 360, 480]
+        divisible_list = [1, 3, 5, 10, 15, 30, 60, 120, 240, 360, 480]
         for divisible_tf in reversed(divisible_list):
             if tf % divisible_tf == 0:
                 return divisible_tf
         return False
-
 
     @staticmethod
     def into_dataframe(data: list, symbol, tf, qtrade=False) -> pd.DataFrame:
@@ -180,11 +185,11 @@ class Helper:
         max_candles_needed += 4
 
         # Formula for determining how many discrete 1000-candle sets are needed
-        split_number = math.ceil(tf * max_candles_needed / 1000) + 1
+        split_number = math.ceil(max_candles_needed / 1000) + 1
 
         # Determining the exact indices of when the set boundaries end
-        ranges = np.ceil(np.linspace(0, tf * max_candles_needed, num=split_number))
+        ranges = np.ceil(np.linspace(0, max_candles_needed, num=split_number))
 
         # Converting all indices into integers and reversing the list
-        ranges = [int(index) for index in ranges[::-1]]
+        ranges = [int(index) for index in reversed(ranges)]
         return ranges
