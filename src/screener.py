@@ -14,7 +14,6 @@ from backtester import Backtester
 from dataloader import _DataLoader
 from fab_strategy import FabStrategy
 from helper import Helper
-from trader import Trader
 
 
 class Screener:
@@ -85,16 +84,20 @@ class Screener:
         return results
 
 #####################################################################################################################
-    def _check_for_tf_signals(self, df, enter=False, exit=False, max_candle_history=10):
+    def _check_for_tf_signals(self, df, enter=False, exit=False, v2=False, max_candle_history=10):
         
         tf_rule_match = {240: ('Rule 1', 'Long'), 235:('Rule 1', 'Long'),
                         145: ('Rule 1', 'Short'),
                         210: ('Rule 2', 'Long'),
                         130: ('Rule 3', 'Long'), 165: ('Rule 3', 'Long'),
                         220: ('Rule 3', 'Short')}
+        tf_delay_match = {235: 0, 145:7, 210:5, 165:4, 130:13, 220:12}
 
         tf = df.reset_index()['tf'].iloc[0]
         rule, side = tf_rule_match[tf]
+        
+        self.strategy.delay = tf_delay_match[tf]
+        self.sma_df = self.strategy.load_data(df)
                         
         for x_last_row in range(-max_candle_history, 0):
             if enter:
@@ -102,14 +105,14 @@ class Screener:
                     continue
                 for remaining_row in range(x_last_row + 1, 0):
                     if self.list_of_exits[(rule, side)](remaining_row) == True:
-                        return False, None, None, None
-                return True, x_last_row, rule, side
+                        return False, None, None, None, None
+                return True, x_last_row, rule, side, self.strategy.delay
             if exit:
                 # print(x_last_row,  list_of_exits[(rule, side)](x_last_row))
                 if self.list_of_exits[(rule, side)](x_last_row) == True:
-                    return True, x_last_row, rule, side
+                    return True, x_last_row, rule, side, self.strategy.delay
 
-        return False, None, None, None
+        return False, None, None, None, None
         
 
     def _check_for_all_signals(self, df, enter=False, exit=False, max_candle_history=10, v2=False):
@@ -184,7 +187,7 @@ class Screener:
 
         return clean_results, symbol_tf_df
         
-    def _assemble_master_screener(self, df_futures, symbol_tf_df, finviz_df=None, reddit_df=None):
+    def _assemble_master_stock_screener(self, df_futures, symbol_tf_df, finviz_df=None, reddit_df=None):
         signal = None
         master_screener = pd.DataFrame(columns=['symbol', 'tf', 'date', 'signal', 'how recent', '% change'])
 
@@ -234,65 +237,93 @@ class Screener:
         symbols = finviz_df['Ticker'].values
         self.futures_results = self._get_questrade_dfs(trader, symbols, tfs)
         self.clean_results, symbol_tf_df  = self._clean_futures_results(self.futures_results, length_filter=231)
-        master_screener = self._assemble_master_screener(df_futures=self.clean_results, symbol_tf_df=symbol_tf_df, finviz_df=finviz_df, reddit_df=reddit_df)
+        master_screener = self._assemble_master_stock_screener(df_futures=self.clean_results, symbol_tf_df=symbol_tf_df, finviz_df=finviz_df, reddit_df=reddit_df)
         return master_screener
+    
 
-    def crypto_screen(self, trader, metrics_table, tfs, max_requests=250, max_candle_history=10, max_candles_needed=231, v2=False):
-        metrics_table = metrics_table[:]
-        symbols = pd.DataFrame(metrics_table.index.unique(level=0), columns=['symbol'])
-        # tfs = [tf for tf in tfs if tf in metrics_table.index.unique(level=1)]
-        tfs_df = pd.DataFrame(tfs, columns=['tf'])
-        df_symbol_tf = symbols.merge(tfs_df, how='cross')
-        max_candles_needed = max_candles_needed + max_candle_history + 1
-        partial_screener = pd.DataFrame(columns=['date', 'signal', 'how recent', 'metric_id'])
-
-        # Grabs Binance data for every single (symbol, tf) pair
-        with ThreadPoolExecutor(max_workers=9) as executor:
-            results = []
-            count = 0
-            for symbol, tf in zip(df_symbol_tf['symbol'].values, df_symbol_tf['tf'].values):
-                count += 1
-                if count > max_requests:
-                    print(f"Passed {max_requests} requests!")
-                    break
-                results.append(executor.submit(trader.set_asset, symbol, tf, max_candles_needed))
+    def _get_binance_dfs(self, trader, symbols, max_candles_needed=231):
+        with ThreadPoolExecutor(max_workers=50) as executor:
+            results = [executor.submit(trader.set_asset_v2, symbol, 5, max_candles_needed*48) for symbol in symbols['symbol'].values]
             executor.shutdown(wait=True)
+        return results
 
+    def _assemble_screener_without_metrics(self, partial_screener, df, x_many_candles_ago, tf, rule, side):
+        symbol = df['symbol'].iloc[0]
+        date = datetime.now() - timedelta(minutes=int(abs(x_many_candles_ago)*tf))
+        change_factor = float(df['close'].iloc[-1]/df['close'].iloc[x_many_candles_ago])
+        percentage_change = Helper.factor_to_percentage([change_factor])[0]
+        partial_screener = partial_screener.append(pd.DataFrame([[symbol, tf, date, (rule, side), x_many_candles_ago, percentage_change]],
+                                            columns=['symbol', 'tf', 'date', 'signal', 'how recent', "% change"]))
+        return partial_screener
+    def _assemble_master_crypto_screener(self, trader, metrics_table, symbols, tfs, results, v2=None):
+        partial_screener = pd.DataFrame()
+        metrics_bool = True
+        self.df_dic = {}
+
+        for df, symbol in zip(results, symbols['symbol'].values):
+            for tf in tfs:
+                df_tf = trader.loader._timeframe_setter(df, tf//5, keep_last_row=True)
+                self.df_dic[symbol,tf] = df_tf
+                signal, x_many_candles_ago, rule, side, delay = self._check_for_tf_signals(df_tf, max_candle_history=10, v2=v2, enter=True)
+
+                if signal:
+                    try:
+                        metric_id = int(metrics_table.loc[(symbol, tf, rule, side, delay), 'metric id'])
+                    except Exception:
+                        metrics_bool = False
+                        partial_screener = self._assemble_screener_without_metrics(partial_screener, df, x_many_candles_ago, tf, rule, side)
+                        continue
+                    date = datetime.now() - timedelta(minutes=int(abs(x_many_candles_ago)*tf))
+                    change_factor = float(df['close'].iloc[-1]/df['close'].iloc[x_many_candles_ago])
+                    percentage_change = Helper.factor_to_percentage([change_factor])[0]
+                    partial_screener = partial_screener.append(pd.DataFrame([[metric_id, date, (rule, side), x_many_candles_ago, percentage_change]],
+                                                        columns=['metric id', 'date', 'signal', 'how recent', "% change"]))
+        if metrics_bool:
+            master_screener = partial_screener.merge(metrics_table.reset_index()
+                                                      [['metric id', 'symbol', 'tf', 'amount of data', 'win loss rate', 'profitability', 
+                                                      'avg pnl', 'longest drawdown','longest run', 'num candles to peak']],
+                                                      on='metric id')
+            master_screener['most recent'] = master_screener.groupby('symbol')['how recent'].transform('max')  
+            delta = pd.to_timedelta(master_screener['num candles to peak']*master_screener['tf'], 'minutes')
+            master_screener['due date'] = master_screener['date'] + delta
+            master_screener = master_screener.set_index(['symbol', 'tf']).sort_values(
+                ['most recent', 'how recent', 'avg pnl'], ascending=[False, False, False])
+            master_screener = master_screener[['metric id'] + list(master_screener.columns.drop('metric id'))]
+        else:
+            master_screener = partial_screener
+            master_screener['most recent'] = master_screener.groupby('symbol')['how recent'].transform('max')  
+            master_screener = master_screener.set_index(['symbol', 'tf']).sort_values(
+                ['most recent', 'how recent'], ascending=[False, False])
+        return master_screener[master_screener['amount of data'] >= 5]
+
+    def crypto_screen(self, trader, metrics_table, tfs, max_candle_history=10, max_candles_needed=245, v2=False):
+        # First line filters all symbols that historically didn't perform
+        symbols = pd.DataFrame(metrics_table[metrics_table['profitability'] > 1].index.unique(level=0))
+        symbols_1 = symbols[:35]
+        symbols_2 = symbols[35:70]
+        symbols_3 = symbols[70:105]
+        max_candles_needed = max_candles_needed + max_candle_history + 1
+        results_1 = self._get_binance_dfs(trader, symbols=symbols_1, max_candles_needed=max_candles_needed)
+        time.sleep(60)
+        results_2 = self._get_binance_dfs(trader, symbols=symbols_2, max_candles_needed=max_candles_needed)
+        time.sleep(60)
+        results_3 = self._get_binance_dfs(trader, symbols=symbols_3, max_candles_needed=max_candles_needed)
+        results = results_1 + results_2 + results_3
         self.results = results
-
-        for df_future, symbol, tf in zip(results, df_symbol_tf['symbol'], df_symbol_tf['tf']):
-            df = df_future.result()
-            signal, x_many_candles_ago, rule, side = self._check_for_all_signals(df, max_candle_history=10, v2=v2, enter=True)
-
-            if signal:
-                try:
-                    metric_id = int(metrics_table.loc[(symbol, tf, rule, side), 'metric_id'])
-                except Exception:
-                    continue
-                date = datetime.now() - timedelta(minutes=int(abs(x_many_candles_ago)*tf))
-                change_factor = float(df['close'].iloc[-1]/df['close'].iloc[x_many_candles_ago])
-                percentage_change = Helper.factor_to_percentage([change_factor])[0]
-                partial_screener = partial_screener.append(pd.DataFrame([[metric_id, date, (rule, side), x_many_candles_ago, percentage_change]],
-                                                    columns=['metric_id', 'date', 'signal', 'how recent', "% change"]))
-
-        master_screener = partial_screener.merge(metrics_table.reset_index()
-                                                      [['metric_id', 'symbol', 'tf', 'average_win', 'unrealized_rrr',
-                                                        'peak_unrealized_profit', 'num_candles_to_peak',
-                                                        'amount_of_data']],
-                                                      on='metric_id')
-
-        master_screener['most recent'] = master_screener.groupby('symbol')['how recent'].transform('max')
-        delta = pd.to_timedelta(master_screener['num_candles_to_peak']*master_screener['tf'], 'minutes')
-        master_screener['due date'] = master_screener['date'] + delta
-        master_screener = master_screener.set_index(['symbol', 'tf']).sort_values(
-            ['most recent', 'how recent', 'unrealized_rrr'], ascending=[False, False, False])
-        master_screener = master_screener[['metric_id'] + list(master_screener.columns.drop('metric_id'))]
+        self.clean_results, symbol_tf_df  = self._clean_futures_results(results, length_filter=231)
+        master_screener = self._assemble_master_crypto_screener(trader, metrics_table, symbols, tfs, self.clean_results)
         return master_screener
 
-    def get_metrics_table(self):
+    def get_metrics_table(self, v2=False):
         cursor = self.loader.sql.conn.cursor()
-        df_metrics = self.loader.sql.SELECT(f"* from metrics order by symbol", cursor).set_index(
-            ['symbol', 'tf', 'rule_no', 'side']).astype(float)
+        if v2:
+            df_metrics = self.loader.sql.SELECT(f"* from metrics_v2 order by symbol", cursor)
+            df_metrics = Helper.remove_column_underscore(df_metrics).set_index(['symbol', 'tf', 'rule no', 'side', 'delay']).astype(float)
+            
+            df_metrics[['metric id', 'amount of data', 'num candles to peak']] = df_metrics[['metric id', 'amount of data', 'num candles to peak']].astype(int)
+        else:
+            df_metrics = self.loader.sql.SELECT(f"* from metrics order by symbol", cursor).set_index(
+                ['symbol', 'tf', 'rule no', 'side']).astype(float)
         return df_metrics
 
     def screener_monitor(self, trader, minutes_to_sleep=1):
@@ -335,25 +366,31 @@ class Screener:
 
             time.sleep(0.5)
 
-    def top_trades(self, trader, df_metrics, tfs, df=False, max_requests=250,  n=3, full=False, recency=-1):
+
+    def _add_signals_to_list(self, recency, top_n_trades):
+        top_recent_trades = []
+        for trade in top_n_trades.index:
+            if top_n_trades.loc[trade, 'how recent'] == recency:
+                try:
+                    side = eval(top_n_trades.loc[trade, 'signal'])[1]
+                except Exception as e:
+                    side = top_n_trades.loc[trade, 'signal'][1]
+                symbol = trade[0]
+                top_recent_trades.append((symbol, side))
+        return top_recent_trades
+
+    def top_trades(self, trader, df_metrics, tfs, n=3, full=False, recency=-1, top_n_trades=()):
         print("Getting Top New Trades:.... ")
-        top_n_trades = self.screen(trader=trader, max_requests=max_requests, tfs=tfs, metrics_table=df_metrics, v2=True)
-        top_n_trades.to_csv("Recent signals.csv")
+        if len(top_n_trades) ==0:
+            top_n_trades = self.crypto_screen(trader=trader, metrics_table=df_metrics, tfs=tfs)
+            top_n_trades.to_csv("Recent signals.csv")
         df_filtered = top_n_trades[top_n_trades['how recent'] == recency].head(n)
         if full:
             df_filtered = top_n_trades
         if len(df_filtered) == 0:
             print("Found no new trades at this time")
-        if df:
-            return df_filtered
-        top_recent_trades = []
-        for trade in top_n_trades.index:
-            if top_n_trades.loc[trade, 'how recent'] == recency:
-                side = top_n_trades.loc[trade, 'signal'][1]
-                symbol = trade[0]
-                top_recent_trades.append((symbol, side))
+        top_recent_trades = self._add_signals_to_list(recency, top_n_trades)
         return top_recent_trades[:n+1], df_filtered
-
 
 
 
