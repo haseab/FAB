@@ -105,6 +105,7 @@ class SqlMapper:
             values = ", ".join([str(tuple(i)) for i in df_list])
             time.sleep(0.2)
             results = self.BULK_INSERT(table_name, columns, values, cursor, first_column)
+            print(len(values))
         return "Write Done"
 
 

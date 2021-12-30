@@ -40,16 +40,17 @@ class TradeExecutor:
         self.latest_trade_info = None
         self.latest_trade = None
         self.loader = _DataLoader(db=False)
-
+        self.precisions = {symbol_dic['symbol'] : symbol_dic['quantityPrecision'] for symbol_dic in self.loader.binance.futures_exchange_info()['symbols']}
+        
     @staticmethod
-    def how_much_to_buy(current_balance, leverage, last_price: str, precision) -> float:
+    def how_much_to_buy(capital, leverage, last_price: str, precision) -> float:
         """Formula that calculates the position size"""
-        significant = Helper.sig_fig(current_balance * leverage / float(last_price), 4)
+        significant = Helper.sig_fig(capital * leverage / float(last_price), 4)
         if significant.is_integer():
             return int(significant)
         return round(significant, precision)
 
-    def enter_market(self, client, symbol_side_pair, capital, leverage=0.001) -> list:
+    def enter_market(self, client, symbol_side_pair, capital, leverage=0.001, number_of_trades=3) -> list:
         """
         Creates a order in the exchange, given the symbol
 
@@ -86,18 +87,17 @@ class TradeExecutor:
 
         #         assert self.how_much_to_buy(last_price) <= self.capital*leverage/last_price + 1
         df_trade_info = pd.DataFrame()
-        futures_info = client.futures_exchange_info()
+            
         list_of_symbols = [symbol for symbol, side in symbol_side_pair]
         print(f"Entering: {', '.join(list_of_symbols)} ")
 
         for symbol, side in symbol_side_pair:
-            precision = [dic["quantityPrecision"] for dic in futures_info['symbols'] if dic['symbol'] == symbol][0]
             last_price = self.loader._get_binance_futures_candles(symbol, tf=1, start_candles_ago=2).iloc[-1, 3]
             enter_market_params = {
                 'symbol': symbol,
                 'side': self.inverse_dic[side],
                 'type': 'MARKET',
-                'quantity': self.how_much_to_buy(capital//len(symbol_side_pair), leverage, last_price, precision)
+                'quantity': self.how_much_to_buy(capital//number_of_trades, leverage, last_price, self.precisions[symbol])
             }
             latest_trade = client.futures_create_order(**enter_market_params)
             trade_info = client.futures_get_order(symbol=symbol, orderId=latest_trade["orderId"])
@@ -125,7 +125,7 @@ class TradeExecutor:
                 'symbol': symbol,
                 'side': side,
                 'type': 'MARKET',
-                'quantity': abs(position_amount)
+                'quantity': round(abs(position_amount), self.precisions[symbol])
             }
 
             latest_trade = client.futures_create_order(**exitMarketParams)

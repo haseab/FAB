@@ -5,7 +5,7 @@ class TradeHistory:
     """Turning the Trading history into an object. This way, the trade information is more legible."""
 
     def __init__(self):
-        self.allTrades = [["List of Trades"]]
+        self.allTrades = [["List of Trades", None, None, None, None]]
 
     def first_trade(self):
         if len(self.allTrades) > 2:

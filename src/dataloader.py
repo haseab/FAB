@@ -310,7 +310,7 @@ class _DataLoader:
     def get_binance_candles(self, symbol, tf, start_date, end_date=None):
         map_tf = {1: "1m", 3: "3m", 5: "5m", 15: "15m", 30: "30m", 60: "1h", 120: "2h", 240: "4h", 360: "6h", 480: "8h"}
         lst = self.binance.get_historical_klines(symbol=symbol, interval=map_tf[tf], start_str=start_date)
-        return Helper.into_dataframe(lst, symbol=symbol, tf=tf)
+        return Helper.into_dataframe(lst, symbol=symbol, tf=tf, index=False)
 
     def get_all_binance_data(self, symbol, tf, start_date, end_date=None):
         map_tf = {1: "1m", 3: "3m", 5: "5m", 15: "15m", 30: "30m", 60: "1h", 120: "2h", 240: "4h", 360: "6h", 480: "8h"}

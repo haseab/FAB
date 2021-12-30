@@ -36,7 +36,7 @@ class Helper:
         new_columns = [' '.join(column.split('_')) for column in df.columns]
         df.columns = new_columns
         return df
-
+    
     @staticmethod
     def current_minute_datetime():
         now = datetime.now()
@@ -95,7 +95,7 @@ class Helper:
         return False
 
     @staticmethod
-    def into_dataframe(data: list, symbol, tf, qtrade=False) -> pd.DataFrame:
+    def into_dataframe(data: list, symbol, tf, qtrade=False, index=True) -> pd.DataFrame:
         """Converts Binance response list into dataframe"""
         crypto = 'USDT' in symbol or 'BUSD' in symbol
 
@@ -120,7 +120,9 @@ class Helper:
         df['symbol'] = [symbol]*len(data)
         df['tf'] = [tf]*len(data)
 
-        return df[['symbol', 'tf', 'timestamp', 'date', 'open', 'high','low', 'close', 'volume']].set_index("timestamp")
+        if index:
+            return df[['symbol', 'tf', 'timestamp', 'date', 'open', 'high','low', 'close', 'volume']].set_index("timestamp")
+        return df[['symbol', 'tf', 'timestamp', 'date', 'open', 'high','low', 'close', 'volume']]
 
     @staticmethod
     def finviz_market_cap_str_to_float(df):
@@ -136,6 +138,11 @@ class Helper:
         return df
 
     from functools import wraps
+
+    @staticmethod
+    def sleep(seconds, divisor=4):
+        for i in range(seconds*divisor):
+            time.sleep(1/divisor)
 
     @staticmethod
     def timeit(method):
@@ -163,7 +170,10 @@ class Helper:
 
     @staticmethod
     def millisecond_timestamp_to_datetime(timestamp_list):
-        return [datetime.fromtimestamp(second_timestamp / 1000) for second_timestamp in timestamp_list]
+        return [datetime.fromtimestamp(millisecond_timestamp // 1000) for millisecond_timestamp in timestamp_list]
+
+    def millisecond_timestamp_to_second_timestamp(timestamp_list):
+        return [millisecond_timestamp//1000 for millisecond_timestamp in timestamp_list]
 
     def datetime_to_millisecond_timestamp(datetime_list):
         return (pd.to_datetime(datetime_list) - pd.Timestamp("1970-01-01").tz_localize(None)) // pd.Timedelta('1s')

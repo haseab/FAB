@@ -119,7 +119,7 @@ class Screener:
         if enter and exit:
             raise Exception("Both Enter and Exit Signals were requested. Choose only one")
         if not enter and not exit:
-            enter = True
+            enter = True    
 
         if v2:
             self.strategy.rule_2_buy_enter = self.strategy.rule_2_buy_enter_v2
@@ -134,14 +134,14 @@ class Screener:
                         continue
                     for remaining_row in range(x_last_row + 1, 0):
                         if self.list_of_exits[(rule, side)](remaining_row) == True:
-                            return False, None, None, None
-                    return True, x_last_row, rule, side
+                            return False, None, None, None, 0
+                    return True, x_last_row, rule, side, 0
                 if exit:
                     # print(x_last_row,  list_of_exits[(rule, side)](x_last_row))
                     if self.list_of_exits[(rule, side)](x_last_row) == True:
-                        return True, x_last_row, rule, side
+                        return True, x_last_row, rule, side, 0
 
-        return False, None, None, None
+        return False, None, None, None, 0
 
     def _get_questrade_dfs(self, trader, symbols, tfs, daily_candles=250):
 
@@ -159,7 +159,7 @@ class Screener:
                     #     test = future.result()
                     # except:
                     #     time.sleep(0.01)
-                    results.append(future)
+                    results.append((symbol, future))
             executor.shutdown(wait=True)
         return results
 
@@ -168,13 +168,13 @@ class Screener:
         symbol_tf_list = []
         for futures_result in futures_results:
             try:
-                result = futures_result.result()
+                result = futures_result[1].result()
                 symbol = result.iloc[0,0]
                 tf = result.iloc[0,1]
                 length = len(result)
                 if length > length_filter:
                     symbol_tf_list.append([symbol,tf])
-                    clean_results.append(futures_result.result())
+                    clean_results.append(futures_result[1].result())
                 else:
                     under_length_results.append(futures_result.result())
             except:
@@ -187,13 +187,13 @@ class Screener:
 
         return clean_results, symbol_tf_df
         
-    def _assemble_master_stock_screener(self, df_futures, symbol_tf_df, finviz_df=None, reddit_df=None):
+    def _assemble_master_stock_screener(self, df_results, symbol_tf_df, finviz_df=None, reddit_df=None):
         signal = None
         master_screener = pd.DataFrame(columns=['symbol', 'tf', 'date', 'signal', 'how recent', '% change'])
 
-        for df, (symbol, tf) in zip(df_futures, symbol_tf_df.values):
+        for df, (symbol, tf) in zip(df_results, symbol_tf_df.values):
             try:
-                signal, x_many_candles_ago, rule, side = self._check_for_all_signals(df, max_candle_history=10, v2=True, enter=True)
+                signal, x_many_candles_ago, rule, side, delay = self._check_for_all_signals(df, max_candle_history=10, v2=True, enter=True)
             except:
                 print(f"{symbol, tf} didn't work")
             
@@ -236,14 +236,14 @@ class Screener:
     def stock_screen(self, trader, finviz_df, tfs, reddit_df=None):
         symbols = finviz_df['Ticker'].values
         self.futures_results = self._get_questrade_dfs(trader, symbols, tfs)
-        self.clean_results, symbol_tf_df  = self._clean_futures_results(self.futures_results, length_filter=231)
-        master_screener = self._assemble_master_stock_screener(df_futures=self.clean_results, symbol_tf_df=symbol_tf_df, finviz_df=finviz_df, reddit_df=reddit_df)
+        self.clean_results, self.symbol_tf_df  = self._clean_futures_results(self.futures_results, length_filter=231)
+        master_screener = self._assemble_master_stock_screener(df_results=self.clean_results, symbol_tf_df=self.symbol_tf_df, finviz_df=finviz_df, reddit_df=reddit_df)
         return master_screener
     
 
     def _get_binance_dfs(self, trader, symbols, max_candles_needed=231):
-        with ThreadPoolExecutor(max_workers=50) as executor:
-            results = [executor.submit(trader.set_asset_v2, symbol, 5, max_candles_needed*48) for symbol in symbols['symbol'].values]
+        with ThreadPoolExecutor(max_workers=9) as executor:
+            results = [(symbol, executor.submit(trader.set_asset_v2, symbol, 5, max_candles_needed*48, True)) for symbol in symbols['symbol'].values]
             executor.shutdown(wait=True)
         return results
 
@@ -255,32 +255,44 @@ class Screener:
         partial_screener = partial_screener.append(pd.DataFrame([[symbol, tf, date, (rule, side), x_many_candles_ago, percentage_change]],
                                             columns=['symbol', 'tf', 'date', 'signal', 'how recent', "% change"]))
         return partial_screener
-    def _assemble_master_crypto_screener(self, trader, metrics_table, symbols, tfs, results, v2=None):
+    def _assemble_master_crypto_screener(self, trader, metrics_table, symbols, tfs, results, v2=None, skip_new_data=True, tf_only=True):
         partial_screener = pd.DataFrame()
         metrics_bool = True
         self.df_dic = {}
+
+        if len(results) == 0:
+            return pd.DataFrame()
 
         for df, symbol in zip(results, symbols['symbol'].values):
             for tf in tfs:
                 df_tf = trader.loader._timeframe_setter(df, tf//5, keep_last_row=True)
                 self.df_dic[symbol,tf] = df_tf
-                signal, x_many_candles_ago, rule, side, delay = self._check_for_tf_signals(df_tf, max_candle_history=10, v2=v2, enter=True)
 
+                if tf_only:
+                    signal, x_many_candles_ago, rule, side, delay = self._check_for_tf_signals(df_tf, max_candle_history=10, v2=v2, enter=True)
+                else:
+                    signal, x_many_candles_ago, rule, side, delay = self._check_for_all_signals(df_tf, max_candle_history=10, v2=v2, enter=True)
+                
                 if signal:
                     try:
                         metric_id = int(metrics_table.loc[(symbol, tf, rule, side, delay), 'metric id'])
                     except Exception:
+                        if skip_new_data:
+                            continue
                         metrics_bool = False
                         partial_screener = self._assemble_screener_without_metrics(partial_screener, df, x_many_candles_ago, tf, rule, side)
                         continue
                     date = datetime.now() - timedelta(minutes=int(abs(x_many_candles_ago)*tf))
                     change_factor = float(df['close'].iloc[-1]/df['close'].iloc[x_many_candles_ago])
                     percentage_change = Helper.factor_to_percentage([change_factor])[0]
-                    partial_screener = partial_screener.append(pd.DataFrame([[metric_id, date, (rule, side), x_many_candles_ago, percentage_change]],
-                                                        columns=['metric id', 'date', 'signal', 'how recent', "% change"]))
+                    partial_screener = partial_screener.append(pd.DataFrame([[metric_id, symbol, tf, date, (rule, side), x_many_candles_ago, percentage_change]],
+                                                        columns=['metric id', 'symbol', 'tf', 'date', 'signal', 'how recent', "% change"]))
+        if len(partial_screener) == 0:
+            return pd.DataFrame(columns=['metric id', 'symbol', 'tf', 'date', 'signal', 'how recent', "% change"])
+
         if metrics_bool:
             master_screener = partial_screener.merge(metrics_table.reset_index()
-                                                      [['metric id', 'symbol', 'tf', 'amount of data', 'win loss rate', 'profitability', 
+                                                      [['metric id', 'amount of data', 'win loss rate', 'profitability', 
                                                       'avg pnl', 'longest drawdown','longest run', 'num candles to peak']],
                                                       on='metric id')
             master_screener['most recent'] = master_screener.groupby('symbol')['how recent'].transform('max')  
@@ -294,9 +306,10 @@ class Screener:
             master_screener['most recent'] = master_screener.groupby('symbol')['how recent'].transform('max')  
             master_screener = master_screener.set_index(['symbol', 'tf']).sort_values(
                 ['most recent', 'how recent'], ascending=[False, False])
-        return master_screener[master_screener['amount of data'] >= 5]
+        master_screener = master_screener[master_screener['amount of data'] >= 5]
+        return master_screener[master_screener['profitability']>1]
 
-    def crypto_screen(self, trader, metrics_table, tfs, max_candle_history=10, max_candles_needed=245, v2=False):
+    def crypto_screen(self, trader, metrics_table, tfs, max_candle_history=10, max_candles_needed=245, v2=False, tf_only=True):
         # First line filters all symbols that historically didn't perform
         symbols = pd.DataFrame(metrics_table[metrics_table['profitability'] > 1].index.unique(level=0))
         symbols_1 = symbols[:35]
@@ -304,17 +317,19 @@ class Screener:
         symbols_3 = symbols[70:105]
         max_candles_needed = max_candles_needed + max_candle_history + 1
         results_1 = self._get_binance_dfs(trader, symbols=symbols_1, max_candles_needed=max_candles_needed)
-        time.sleep(60)
+        # time.sleep(60)
         results_2 = self._get_binance_dfs(trader, symbols=symbols_2, max_candles_needed=max_candles_needed)
-        time.sleep(60)
+        # time.sleep(60) 
         results_3 = self._get_binance_dfs(trader, symbols=symbols_3, max_candles_needed=max_candles_needed)
         results = results_1 + results_2 + results_3
         self.results = results
         self.clean_results, symbol_tf_df  = self._clean_futures_results(results, length_filter=231)
+        if len(self.error_results) > 0:
+            raise("Exchange Exception Occurred. Likely Passed the rate limit.")
         master_screener = self._assemble_master_crypto_screener(trader, metrics_table, symbols, tfs, self.clean_results)
         return master_screener
 
-    def get_metrics_table(self, v2=False):
+    def get_metrics_table(self, v2=True):
         cursor = self.loader.sql.conn.cursor()
         if v2:
             df_metrics = self.loader.sql.SELECT(f"* from metrics_v2 order by symbol", cursor)
