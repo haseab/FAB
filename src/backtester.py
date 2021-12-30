@@ -15,7 +15,6 @@ from dataloader import _DataLoader
 from fab_strategy import FabStrategy
 from helper import Helper
 from illustrator import Illustrator
-from trade import Trade
 from trading_history import TradeHistory
 
 
@@ -144,54 +143,54 @@ class Backtester:
         return self.df_tf
 
     def check_rule_1(self, strategy, i, list_of_str_dates):
-        if strategy.rule_1_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i+1], strategy.close[i], "Rule 1"]))
+        last_trade = self.trade_history.last_trade()
 
-        elif strategy.rule_1_buy_exit(i) and self.trade_history.last_trade().side == "Long" \
-                and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 1"]))
+        if strategy.rule_1_buy_enter(i) and last_trade.status != "Enter":
+            self.trade_history.append([i+1,"Long", "Enter", list_of_str_dates[i+1], strategy.close[i], "Rule 1"])
 
-        elif strategy.rule_1_short_enter(i) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i+1], strategy.close[i], "Rule 1"]))
+        elif strategy.rule_1_buy_exit(i) and last_trade.side == "Long" and last_trade.status == "Enter":
+            self.trade_history.append([i+1,"Long", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 1"])
 
-        elif strategy.rule_1_short_exit(i) and self.trade_history.last_trade().side == "Short" \
-                and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 1"]))
+        elif strategy.rule_1_short_enter(i) and last_trade.status != "Enter":
+            self.trade_history.append([i+1, "Short", "Enter", list_of_str_dates[i+1], strategy.close[i], "Rule 1"])
+
+        elif strategy.rule_1_short_exit(i) and last_trade.side == "Short" and last_trade.status == "Enter":
+            self.trade_history.append([i+1, "Short", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 1"])
 
     def check_rule_2(self, strategy, i, list_of_str_dates, v2=False):
+        last_trade = self.trade_history.last_trade()
+
         if v2:
             strategy.rule_2_short_enter = strategy.rule_2_short_enter_v2
             strategy.rule_2_buy_enter = strategy.rule_2_buy_enter_v2
 
-        if strategy.rule_2_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i], strategy.close[i]*(1+strategy.allowance), "Rule 2"]))
+        if strategy.rule_2_buy_enter(i) and last_trade.status != "Enter":
+            self.trade_history.append([i+1, "Long", "Enter", list_of_str_dates[i+1], strategy.close[i]*(1+strategy.allowance), "Rule 2"])
 
-        elif strategy.rule_2_short_enter(i) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i], strategy.close[i]*(1-strategy.allowance), "Rule 2"]))
+        elif strategy.rule_2_short_enter(i) and last_trade.status != "Enter":
+            self.trade_history.append([i+1, "Short", "Enter", list_of_str_dates[i+1], strategy.close[i]*(1-strategy.allowance), "Rule 2"])
 
-        if strategy.rule_2_buy_stop_absolute(i) and self.trade_history.last_trade().rule == "Rule 2" and \
-                self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.close[i], "Rule 2"]))
+        if strategy.rule_2_buy_stop_absolute(i) and last_trade.rule == "Rule 2" and last_trade.side == "Long" and last_trade.status == "Enter":
+            self.trade_history.append([i+1, "Long", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 2"])
 
-        if strategy.rule_2_short_stop_absolute(i) and self.trade_history.last_trade().rule == "Rule 2" and \
-                self.trade_history.last_trade().side == "Short" and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.close[i], "Rule 2"]))
+        if strategy.rule_2_short_stop_absolute(i) and last_trade.rule == "Rule 2" and last_trade.side == "Short" and last_trade.status == "Enter":
+            self.trade_history.append([i+1, "Short", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 2"])
 
-        elif strategy.rule_2_short_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
-                self.trade_history.last_trade().side == "Short" and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Short", "Exit", list_of_str_dates[i], strategy.close[i], "Rule 2"]))
+        elif strategy.rule_2_short_stop(i) and last_trade.rule == "Rule 2" and last_trade.side == "Short" and last_trade.status == "Enter":
+            self.trade_history.append([i+1, "Short", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 2"])
 
-        elif strategy.rule_2_buy_stop(i) and self.trade_history.last_trade().rule == "Rule 2" and \
-                self.trade_history.last_trade().side == "Long" and self.trade_history.last_trade().status == "Enter":
-            self.trade_history.append(Trade(["Long", "Exit", list_of_str_dates[i], strategy.close[i], "Rule 2"]))
+        elif strategy.rule_2_buy_stop(i) and last_trade.rule == "Rule 2" and last_trade.side == "Long" and last_trade.status == "Enter":
+            self.trade_history.append([i+1, "Long", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 2"])
 
 
     def check_rule_3(self, strategy, i, list_of_str_dates):
-        if strategy.rule_3_buy_enter(i) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Long", "Enter", list_of_str_dates[i+1], strategy.close[i], "Rule 3"]))
+        last_trade = self.trade_history.last_trade()
 
-        elif strategy.rule_3_short_enter(i) and self.trade_history.last_trade().status != "Enter":
-            self.trade_history.append(Trade(["Short", "Enter", list_of_str_dates[i+1], strategy.close[i], "Rule 3"]))
+        if strategy.rule_3_buy_enter(i) and last_trade.status != "Enter":
+            self.trade_history.append([i+1, "Long", "Enter", list_of_str_dates[i+1], strategy.close[i], "Rule 3"])
+
+        elif strategy.rule_3_short_enter(i) and last_trade.status != "Enter":
+            self.trade_history.append([i+1, "Short", "Enter", list_of_str_dates[i+1], strategy.close[i], "Rule 3"])
 
     def graph_trade(self, tid=None, index=None, rule=None, adjust_left_view=150, adjust_right_view=10, df_th=None,
                     tf=None, test_df=False, flat=False, save=False, data_only=False):
@@ -235,13 +234,13 @@ class Backtester:
         if tid != None:
             df_th = df_th.set_index('tid')
             if not data_only and not test_df:
-                print(df_th.drop(['strategy', 'side', 'symbol', 'tf', 'candles'], axis=1).loc[tid, :])
+                print(df_th.drop(['side', 'symbol', 'tf', 'candles'], axis=1).loc[tid, :])
             df_illus = df_th
             return self.illustrator.prepare_trade_graph_data(df_illus, df_tf, tid, tf=tf, data_only=data_only, flat=flat,
                                                      adjust_left_view=adjust_left_view, save=save, adjust_right_view=adjust_right_view)
         if index != None:
             if not data_only and not test_df:
-                print(df_illus.drop(['strategy', 'side', 'symbol', 'tf', 'candles'], axis=1).loc[index, :])
+                print(df_illus.drop(['side', 'symbol', 'tf', 'candles'], axis=1).loc[index, :])
             return self.illustrator.prepare_trade_graph_data(df_illus.set_index('tid'), df_tf, tid, data_only=False, flat=flat,
                                                      tf=tf, adjust_left_view=adjust_left_view, save=save, adjust_right_view=adjust_right_view)
 
@@ -515,60 +514,62 @@ class Backtester:
 
         return self.trade_history
 
-    def create_trade_history_table(self):
-        """Only use this function once you complete a backtest with an instance"""
+    def create_trade_history_table(self, trade_history_list):
+        test_th = pd.DataFrame(trade_history_list[1:], columns=['index', 'side', 'enter', 'date', 'price', 'rule'])
 
-        trade_history = pd.DataFrame(
-            columns=["tid", "enter_date", "exit_date", "strategy", "rule", "side", "symbol", "tf", 'enter_price',
-                     'exit_price', "candles"])
-        tid = 0
-        for i in range(2, len(self.trade_history), 2):
-            tid += 1
-            enter_date = self.trade_history[i - 1].datetime
-            exit_date = self.trade_history[i].datetime
-            strategy = "BOSS"
-            rule = self.trade_history[i - 1].rule
-            side = self.trade_history[i - 1].side
-            symbol = self.symbol
-            tf = self.tf
-            enter_price = self.trade_history[i - 1].price
-            exit_price = self.trade_history[i].price
-            candles = int((np.datetime64(exit_date) - np.datetime64(enter_date)) / np.timedelta64(1, 'm')) + 1
-            candles = int(candles//tf) + 1
+        initial_columns = ['index', 'side', 'enter', 'date', 'price', 'rule']
+        enter_columns = ['enter_index', 'side', 'enter', 'enter_date', 'enter_price', 'rule']
+        exit_columns = ['exit_index', 'side', 'exit', 'exit_date', 'exit_price', 'rule']
 
-            row = pd.DataFrame(
-                [[tid, enter_date, exit_date, strategy, rule, side, symbol, tf, enter_price, exit_price, candles]],
-                columns=['tid', "enter_date", "exit_date", "strategy", "rule", "side", "symbol", "tf",
-                         'enter_price', 'exit_price', 'candles'])
-            trade_history = trade_history.append(row)
+        df_enter = test_th[::2].rename(columns = dict(zip(initial_columns, enter_columns))).reset_index(drop=True).drop('enter', axis=1)
+        df_enter['tid'] = range(1,len(df_enter)+1)
 
-        trade_history[['enter_date', 'exit_date']] = trade_history[['enter_date', 'exit_date']].astype(np.datetime64)
-        return trade_history.reset_index(drop=True)
+        df_exit = test_th[1::2].rename(columns = dict(zip(initial_columns, exit_columns))).reset_index(drop=True).drop(['side', 'rule', 'exit'], axis=1)
+        df_exit['tid'] = range(1,len(df_exit)+1)
 
-    @staticmethod
-    def bridge_table_creator(df_candles, df_th):
+        if len(df_enter) == len(df_exit) + 1:
+            df_enter = df_enter.drop(df_enter.tail(1).index)
+
+        elif len(df_enter) > len(df_exit) + 1:
+            raise("issue with size of dfs")
+
+        df = df_enter.merge(df_exit, on='tid')
+
+        df['symbol'] = [self.symbol]*len(df_enter)
+        df['tf'] = [self.tf]*len(df_enter)
+
+        df[['enter_date','exit_date']] = df[['enter_date','exit_date']].astype('datetime64')
+        df['candles'] = df['exit_index']-df['enter_index'] + 1
+        # df['candles'] = ((df['exit_date'] - df['enter_date']) / np.timedelta64(self.tf, 'm') + 1).astype(int)
+        df = df[['tid', 'enter_index', 'exit_index', 'enter_date', 'exit_date', 'rule', 'side', 'symbol', 'tf', 'enter_price', 'exit_price', 'candles']]
+        return df
+
+    def bridge_table_creator(self, df_candles, df_th):
         df_candle_id = df_candles.reset_index()['candle_id']
-        df_candle_ts = df_candles.reset_index()['timestamp']
         bridge = pd.DataFrame(columns=['tid', 'candle_id'])
-        #     start = time.perf_counter()
-        for tid, enter_date, exit_date, in zip(df_th['tid'], df_th['enter_date'], df_th['exit_date']):
-            enter_timestamp = int(pd.Timestamp(enter_date, tz='utc').timestamp())
-            exit_timestamp = int(pd.Timestamp(exit_date, tz='utc').timestamp())
+        start = time.perf_counter()
 
-            right = df_candle_id[df_candle_ts.between(enter_timestamp, exit_timestamp)].reset_index(drop=True)
-            left = pd.Series(data=[tid for _ in range(len(right))], name='tid', dtype='int64')
+        left_array, right_array = np.array([]), np.array([])
+    
+        for tid, enter_index, exit_index, in zip(df_th['tid'], df_th['enter_index'], df_th['exit_index']):
 
-            bridge = bridge.append(pd.concat([left, right], axis=1))
+            right = df_candle_id.iloc[enter_index:exit_index+1].reset_index(drop=True).values
+            right_array = np.append(right_array, right)
+            left_array = np.append(left_array, np.repeat(tid, len(right)))
 
-        #     print(f"All Done: {time.perf_counter()-start}")
+        bridge = bridge.append(pd.concat([pd.Series(left_array, name='tid'), pd.Series(right_array, name='candle_id')], axis=1))
+        bridge = bridge.astype(int)
+            
+        self.bridge = bridge.reset_index(drop=True)
         return bridge.reset_index(drop=True)
 
     def generate_detailed_trading_history(self, df_candles=None, df_th=None):
-        df_candles = self.df if type(df_candles) == type(None) else df_candles
+        df_candles = self.df_tf if type(df_candles) == type(None) else df_candles
         df_th = self.df_th if type(df_th) == type(None) else df_th
 
         bridge = self.bridge_table_creator(df_candles, df_th)
-        df_th_merge = df_th[['tid', 'symbol', 'tf', 'enter_price', 'exit_price', 'strategy', 'rule', 'side']]
+
+        df_th_merge = df_th[['tid', 'symbol', 'tf', 'enter_price', 'exit_price', 'rule', 'side', 'candles']]
         df_candles_merge = df_candles[['timestamp', 'date', 'open', 'high', 'low', 'close', 'volume']]
 
         dfs_to_merge = [bridge, df_th_merge]
@@ -669,12 +670,18 @@ class Backtester:
         return self.df_metrics
 
     def start_backtesting(self, tf=None, delay=0, sensitivity=0, v2=False):
+        start = time.time()
         tf = self.tf if not tf else tf
         self.set_timeframe(tf)
+
         self.df_tf = self.load_timeframe_data()
-        self.calculate_trading_history(delay=delay, sensitivity=sensitivity, v2=v2)
-        self.df_th = self.create_trade_history_table()
+        print("Loaded Timeframe data", time.time()-start)
+        trade_history = self.calculate_trading_history(delay=delay, sensitivity=sensitivity, v2=v2)
+        print("Calculated Trading History", time.time()-start)
+        self.df_th = self.create_trade_history_table(trade_history)
+        print("Trading History Table Created", time.time()-start)
         self.detailed_th = self.generate_detailed_trading_history(self.df).set_index(['tid', 'candle_id'])
+        print("Detailed Th created", time.time()-start)
         # self.df_th = self.add_metrics_to_trading_history(self.df_th)
         return self
 
