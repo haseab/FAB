@@ -143,6 +143,21 @@ class Helper:
     def sleep(seconds, divisor=4):
         for i in range(seconds*divisor):
             time.sleep(1/divisor)
+    
+    @staticmethod
+    def finviz_market_cap_str_to_float(df):
+        new_df = df.copy()
+        new_list = []
+        for market_cap in df['Market Cap']:
+            if 'B' in market_cap:
+                new_list.append(float(market_cap[:-1])*10**9)
+            elif 'M' in market_cap:
+                new_list.append(float(market_cap[:-1])*10**6)
+            else:
+                new_list.append(0)
+        new_df['Market Cap'] = new_list
+        return new_df.sort_values("Market Cap", ascending=False).reset_index(drop=True)
+
 
     @staticmethod
     def timeit(method):

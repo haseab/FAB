@@ -125,6 +125,25 @@ class _DataLoader:
         data = self.binance.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time, endTime=end_time, limit=num_candles)
 
         return Helper.into_dataframe(data, symbol=symbol, tf=tf)
+
+
+    def load_finviz_data():
+        import pandas as pd
+        from finviz.screener import Screener
+
+        filters_nyse = ['exch_nyse']  # Shows companies in NASDAQ which are in the S&P500
+        stock_list_nyse = Screener(filters=filters_nyse, table='Ownership', order='Market Cap')  # Get the performance table and sort it by price ascending
+
+        filters_nasdaq=['exch_nasd']
+        stock_list_nasd = Screener(filters=filters_nasdaq, table='Ownership', order='Market Cap')  # Get the performance table and sort it by price ascending
+
+        nasdaq_df = pd.DataFrame(stock_list_nasd.data).drop('No.', axis=1)
+        nyse_df = pd.DataFrame(stock_list_nyse.data).drop('No.', axis=1)
+
+        df = nyse_df.append(nasdaq_df).reset_index(drop=True)
+
+        df.to_csv('finviz_stocks.csv', index=False)
+        return df
     
     def _get_ibkr_stocks_candles(self, symbol: str, tf: int, start_time, end_time):
         tf_map = {1: "1 min", 5: "5 mins", 15: "15 mins", 30: "30 mins", 
