@@ -3,6 +3,7 @@ import os
 import random
 import time
 from datetime import datetime
+from hmac import new
 
 import dateparser
 import numpy as np
@@ -63,6 +64,8 @@ class Trader():
         self.illustrator = Illustrator()
         self.strategy = FabStrategy()
         self.df = None
+        self.exit_trade_info = pd.DataFrame()
+        self.enter_trade_info = pd.DataFrame()
 
     def check_on_switch(self) -> bool:
         """
@@ -155,6 +158,17 @@ class Trader():
         data = self.set_asset(symbol, tf, max_candles_needed=375, drop_last_row=False)
         return self.illustrator.graph_df(data)
 
+    def get_necessary_data_v2(self, symbol: str, tf: int, max_candles_needed:int = 235) -> pd.DataFrame:
+        now = time.time()
+        df = pd.DataFrame()
+
+        # days = max_candles_needed*tf//1440 + 1
+        start_datetime = str(Helper.datetime_from_tf(tf, daily_1m_candles=1440, max_candles_needed=max_candles_needed)[0])
+        df = df.append(self.loader.get_binance_candles(symbol, tf, start_date=start_datetime))
+        df['symbol'] = [symbol for _ in range(len(df))]
+        return df.drop_duplicates()
+
+
     def get_necessary_data(self, symbol: str, tf: int, max_candles_needed:int = 235) -> pd.DataFrame:
         """
         Gets the minimum necessary data to trade this asset.
@@ -220,7 +234,7 @@ class Trader():
         # Updating original data with new data.
         self.df = self.df.append(last_few_candles).drop_duplicates()
 
-    def get_positions_amount(self, list_of_symbols: list) -> list:
+    def get_positions_amount(self, list_of_symbols: list, divide_by=1) -> list:
         """
         Gets the total amount of current position for a given symbol
         Parameters:
@@ -236,12 +250,18 @@ class Trader():
         for symbol in list_of_symbols:
             for coin_futures_info in self.binance.futures_position_information():
                 if coin_futures_info['symbol'] == symbol:
-                    position_values[symbol] = float(coin_futures_info["positionAmt"])
+                    amount = float(coin_futures_info["positionAmt"])
+                    # sig_dig_amount = Helper.sig_fig(amount/divide_by)
+                    position_values[symbol] = amount - amount/divide_by
         return position_values
 
-    def set_asset_v2(self, symbol: str, tf: int, max_candles_needed: int = 231) -> pd.DataFrame:
+    def set_asset_v2(self, symbol: str, tf: int, max_candles_needed: int = 231, v2=False) -> pd.DataFrame:
         binance_tf = Helper.find_greatest_divisible_timeframe(tf)
-        df = self.get_necessary_data(symbol, binance_tf, max_candles_needed*(tf//binance_tf))
+        new_max_candles = max_candles_needed*(tf//binance_tf)
+        if v2:
+            df = self.get_necessary_data_v2(symbol, binance_tf, new_max_candles)
+        else:
+            df = self.get_necessary_data(symbol, binance_tf, new_max_candles)
         self.df, self.tf, self.symbol= df, tf, symbol
         return df
 
@@ -265,7 +285,7 @@ class Trader():
             df = Helper.into_dataframe(
                 self.binance.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time), symbol=symbol, tf=tf)
             df = df.reset_index().set_index(['symbol', 'tf', 'timestamp'])
-            if drop_last_row:
+            if not keep_last_row:
                 df.drop(df.tail(1).index, inplace=True)
         else:
             # If it doesn't match Binance available timeframes, it must be transformed after fetching the least divisible timeframe data.
@@ -549,11 +569,15 @@ class Trader():
         # current_position_dfs = {symbol:screener.clean_results[symbol] for symbol in current_position_symbols}
         for symbol in current_position_symbols:
             for tf in tfs:
-                df = screener.df_dic[(symbol, tf)]
-                close_signal, *other = screener._check_for_tf_signals(df, max_candle_history=10, exit=True)
-                if close_signal:
-                    trades_to_close.append(symbol)
-                    print(f'{symbol} Trade Closed')
+                try:
+                    df = screener.df_dic[(symbol, tf)]
+                    close_signal, *other = screener._check_for_tf_signals(df, max_candle_history=10, exit=True)
+                    if close_signal:
+                        trades_to_close.append(symbol)
+                        print(f'{symbol} Trade Closed')
+                except AttributeError as e:
+                    return []
+                
         return trades_to_close
 
     def output_loading(self):
@@ -572,10 +596,10 @@ class Trader():
 
     def trade_free_capital(self, executor, leverage, remaining_to_invest, trades_to_enter):
         print(f"Free capital: {remaining_to_invest} USD")
-        self.df_orders = executor.enter_market(self.binance, symbol_side_pair=trades_to_enter,
-                                               capital=remaining_to_invest,
-                                               leverage=leverage)
+        self.df_orders = executor.enter_market(client=self.binance, symbol_side_pair=trades_to_enter, capital=remaining_to_invest, leverage=leverage, number_of_trades=1)
         display(self.df_orders)
+        self.enter_trade_info = self.enter_trade_info.append(self.df_orders)
+        self.enter_trade_info.to_csv("FAB Order History.csv")
 
     def calculate_remaining_capital(self, current_positions, capital):
         total_invested = current_positions['usd size'].sum() if len(current_positions) > 0 else 0
@@ -590,12 +614,20 @@ class Trader():
                 self.close_trade_info = executor.exit_market(self.binance, self.get_positions_amount(trades_to_close))
                 display(self.close_trade_info)
             if trades_to_enter:
-                self.enter_trade_info = executor.enter_market(self.binance, final_trades_to_enter, self.capital, leverage=leverage)
+                dividing_factor = (len(current_positions) + len(trades_to_enter))/len(current_positions)
+                positions_amount = self.get_positions_amount(current_positions['symbol'].values, divide_by=dividing_factor)
+                print(positions_amount)
+
+                self.exit_trade_info = self.exit_trade_info.append(executor.exit_market(self.binance, positions_amount))
+                self.enter_trade_info = self.enter_trade_info.append(executor.enter_market(self.binance, final_trades_to_enter, self.capital, leverage, number_of_trades))
+                self.enter_trade_info.to_csv("FAB Order History.csv")
                 display(self.enter_trade_info)
             else:
                 print("No Trades made")
 
     def close_any_old_trades(self, screener, executor, current_positions, tfs):
+        if len(current_positions) == 0:
+            return False
         trades_to_close = self._check_trade_close(screener, current_positions, tfs)
         if trades_to_close:
             self.close_trade_info = executor.exit_market(self.binance, self.get_positions_amount(trades_to_close))
@@ -614,10 +646,10 @@ class Trader():
         current_positions_symbols = list(current_positions['symbol'].values)
 
         all_symbols = list(set(trades_of_interest).union(set(current_positions_symbols)))
-        top_x_symbols = sorted(all_symbols, key=lambda x: key.loc[x]['avg pnl'], reverse=True)[:number_of_trades]
-        
-        partial_trades_to_enter = list(set(top_x_symbols).intersection(set(trades_of_interest)).difference(set(current_positions_symbols)))
-        trades_to_close = list(set(current_positions_symbols).difference(set(top_x_symbols)))
+        self.top_x_symbols = sorted(all_symbols, key=lambda x: key.loc[x]['avg pnl'], reverse=True)[:number_of_trades]
+
+        partial_trades_to_enter = list(set(self.top_x_symbols).intersection(set(trades_of_interest)).difference(set(current_positions_symbols)))
+        trades_to_close = list(set(current_positions_symbols).difference(set(self.top_x_symbols)))
 
         final_trades_to_enter = [(symbol, side) for symbol, side in trades_to_enter if symbol in partial_trades_to_enter]
 
@@ -628,6 +660,8 @@ class Trader():
         executor = self.executor
         self.capital = self.get_capital()
         self.leverage = leverage
+        self.load_account()
+
 
         now = Helper.current_minute_datetime()
         while True:
@@ -639,17 +673,20 @@ class Trader():
                 self.close_any_old_trades(screener, executor, current_positions, tfs)
 
                 remaining_to_invest = self.calculate_remaining_capital(current_positions, self.capital)
+                self.remaining_capital = remaining_to_invest*leverage
 
                 ## trades_to_enter is a list of lists (Ex. [('BANDUSDT', 'Short'), ('BCHUSDT', 'Short')]
                 ## df_recent_signals is a regular screener dataframe
                 trades_left = number_of_trades - len(current_positions)
-                trades_to_enter, df_recent_signals = screener.top_trades(trader=self, df_metrics=df_metrics, tfs=tfs, n=trades_left)
+                trades_to_enter, df_recent_signals = screener.top_trades(trader=self, df_metrics=df_metrics, tfs=tfs, n=trades_left, recency=recency)
+                display(df_recent_signals)
 
-                if remaining_to_invest*self.leverage > 50 and trades_to_enter:
-                    self.trade_free_capital(executor, self.leverage, remaining_to_invest*self.leverage, trades_to_enter)
+                if self.remaining_capital > 50 and trades_to_enter:
+                    self.trade_free_capital(executor, self.leverage, self.remaining_capital, trades_to_enter)
                 else:
+                    print(self.leverage, trades_to_enter, number_of_trades)
                     self.optimize_trades(executor, current_positions, self.leverage, df_metrics, trades_to_enter, number_of_trades)
-
+                Helper.sleep(60)
                 now = Helper.current_minute_datetime()
                 print()
             self.output_loading()
