@@ -126,7 +126,6 @@ class _DataLoader:
 
         return Helper.into_dataframe(data, symbol=symbol, tf=tf)
 
-
     def load_finviz_data():
         import pandas as pd
         from finviz.screener import Screener
