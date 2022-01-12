@@ -1,4 +1,21 @@
+asyncpg==0.22.0
+binance==0.3
+dash==2.0.0
+dateparser==1.0.0
+finviz==1.4.3
+ftx==1.0.2
+ib_insync==0.9.69
+ipython==7.31.0
+jupyter_dash==0.4.0
 matplotlib==3.3.3
+mplfinance==0.12.7a10
+mysql_connector_repackaged==0.3.1
 numpy==1.19.3
 pandas==1.2.0
-python-binance=0.7.5 # This needs to be updated
+playsound==1.2.2
+plotly==5.5.0
+psycopg2==2.8.6
+python-decouple==3.5
+qtrade==0.4.0
+requests==2.26.0
+SQLAlchemy==1.4.2
