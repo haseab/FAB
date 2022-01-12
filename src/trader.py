@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from binance.client import Client
 from decouple import config
-from ftx import FtxClient
+# from ftx import FtxClient
 from IPython.display import clear_output, display
 
 from dataloader import _DataLoader
@@ -54,7 +54,7 @@ class Trader():
         if binance:
 
             self.binance = Client()
-        self.ftx = FtxClient()
+        # self.ftx = FtxClient()
         self.capital = None
         self.leverage = 1 / 1000
         self.tf = None
@@ -91,12 +91,12 @@ class Trader():
         API_KEY_BINANCE = config('API_KEY_BINANCE')
         API_SECRET_BINANCE  = config('API_SECRET_BINANCE')
 
-        API_KEY_FTX = config('API_KEY_FTX')
-        API_SECRET_FTX  = config('API_SECRET_FTX')
+        # API_KEY_FTX = config('API_KEY_FTX')
+        # API_SECRET_FTX  = config('API_SECRET_FTX')
 
         self.binance = Client(api_key=API_KEY_BINANCE, api_secret=API_SECRET_BINANCE)
-        self.ftx = FtxClient(api_key=API_KEY_FTX, api_secret=API_SECRET_FTX)
-        return "Connected to Both Binance and FTX"
+        # self.ftx = FtxClient(api_key=API_KEY_FTX, api_secret=API_SECRET_FTX)
+        return "Connected to Binance"
 
     def get_capital(self, additional_balance=0, binance_only=False, ):
 
