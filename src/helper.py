@@ -2,6 +2,7 @@ import math
 import time
 from datetime import datetime, timedelta
 from os import stat
+from typing import Type
 
 import dateparser
 import numpy as np
@@ -18,13 +19,18 @@ class Helper:
         """ Rounds to the number of significant digits indicated"""
         return round(x, sig - math.ceil(math.log10(abs(x))))
     @staticmethod
-    def calculate_short_profitability(enter_price, exit_price, commission):
-        return (commission ** 2) * (2 - exit_price / enter_price)
+    def calculate_short_profitability(enter_price, exit_price, commission, percentage=False):
+        ans = (commission ** 2) * (2 - exit_price / enter_price)
+        if percentage:
+            return (ans-1)*100
+        return ans
 
     @staticmethod
-    def calculate_long_profitability(enter_price, exit_price, commission):
-        return (commission ** 2) * (exit_price / enter_price)
-
+    def calculate_long_profitability(enter_price, exit_price, commission, percentage=False):
+        ans = (commission ** 2) * (exit_price / enter_price)
+        if percentage:
+            return (ans-1)*100
+        return ans
     @staticmethod
     def sleep_for(seconds, partition=20):
         print(f"Sleeping {seconds} seconds...")
@@ -74,9 +80,8 @@ class Helper:
         return np.array([str(date_list.iloc[i]) for i in range(len(date_list))])
 
     @staticmethod
-    def string_to_timestamp(date: str, adjust=1) -> int:
-        """Converts String of form DD-MM-YY into millisecond timestamp"""
-        return int(time.mktime(datetime.strptime(date, "%Y-%m-%d").timetuple())) * adjust
+    def string_to_timestamp(date: str) -> int:
+        return int(dateparser.parse(date).timestamp())
 
     def minutes_ago_to_timestamp(self, minutes_ago, from_timestamp, adjust=1):
         # Multiplies second timestamp to turn into millisecond timestamp (which binance uses)
@@ -124,26 +129,36 @@ class Helper:
             return df[['symbol', 'tf', 'timestamp', 'date', 'open', 'high','low', 'close', 'volume']].set_index("timestamp")
         return df[['symbol', 'tf', 'timestamp', 'date', 'open', 'high','low', 'close', 'volume']]
 
-    @staticmethod
-    def finviz_market_cap_str_to_float(df):
-        new_list = []
-        for market_cap in df['Market Cap']:
-            if 'B' in market_cap:
-                new_list.append(float(market_cap[:-1])*10**9)
-            elif 'M' in market_cap:
-                new_list.append(float(market_cap[:-1])*10**6)
-            else:
-                new_list.append(0)
-        df['Market Cap'] = new_list
-        return df
-
     from functools import wraps
 
     @staticmethod
     def sleep(seconds, divisor=4):
         for i in range(seconds*divisor):
             time.sleep(1/divisor)
+
+    def nparray_to_tuple(self, array):
+        return tuple(self.nparray_to_tuple(element) for element in array) if type(array) in (np.ndarray, np.array) else array
+
+    @staticmethod
+    def drop_extra_delays(df_metrics, tf_delay_match):
+        metrics  =df_metrics.reset_index().set_index(['tf', 'delay'])
+        dropped = []
+        for tf, delay in metrics.index:
+            actual_delay = tf_delay_match[tf]
+            if actual_delay != delay and (tf,delay) not in dropped:
+                metrics = metrics.drop((tf, delay))
+                dropped.append((tf, delay))
+        metrics = metrics.reset_index().set_index(['symbol', 'tf', 'rule no', 'side', 'delay'])
+        # metrics = metrics[metrics['amount of data'] > 5]
+        return metrics
     
+    @staticmethod
+    def check_lower_leverage(leverage, lower_than=1):    
+        if leverage < 1:
+            print()
+            print(f"NOTE: LEVERAGE IS LESS THAN {lower_than}")
+            print()
+
     @staticmethod
     def finviz_market_cap_str_to_float(df):
         new_df = df.copy()
@@ -203,6 +218,19 @@ class Helper:
         # Performing calculation to get the difference
         diff = (current_minute - last_minute - timedelta(minutes=tf)).seconds / 60
         return diff
+
+    @staticmethod
+    def determine_timestamp_positions(start_time, end_time, limit=7):
+        """limit is in days"""
+        MILLISECONDS_IN_DAY = 86_400_000
+        if not end_time:
+            int(time.time())*1000
+        
+        split_number = math.ceil((end_time-start_time)/MILLISECONDS_IN_DAY / 7) + 1
+        ranges = np.ceil(np.linspace(start_time, end_time, num=split_number))
+        ranges = [int(index) for index in ranges]
+        return ranges
+
 
     @staticmethod
     def determine_candle_positions(max_candles_needed, tf):
