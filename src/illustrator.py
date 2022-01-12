@@ -1,9 +1,11 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 import numpy as np
 import pandas as pd
+import plotly.express as px  # (version 4.7.0 or higher)
+import plotly.graph_objects as go
 
 from fab_strategy import FabStrategy
 from helper import Helper
@@ -24,6 +26,7 @@ class Illustrator:
     """
     def __init__(self):
         self.strategy = FabStrategy()
+        pass
 
     def set_graph_style(self, df_graph, sma=True, extra_mas=False):
         addplot = []
@@ -43,6 +46,45 @@ class Illustrator:
             else:
                 addplot = [ma_sma7, ma_sma77, ma_sma200, ma_sma231]
         return df_graph, addplot
+    
+    def current_trades_portfolio(self, current_positions): 
+        color_df = pd.read_json(r"c:/users/haseab/Desktop/Python/PycharmProjects/FAB/local/Dash FAB/binance_crypto_colors.json")
+        colors = color_df.merge(current_positions[['symbol']], on='symbol')['color'].values
+        fig = px.pie(data_frame=current_positions, values='usd size', names='symbol', hover_data=['symbol'])
+        fig.update_traces(textposition='inside', textinfo='percent+label', marker = dict(colors=colors))
+        fig.update_layout(margin=dict(l=20, r=20, t=20, b=20))
+        # fig.show()
+        return fig
+
+    def graph_trading_history(self, trader, start_date, continuous=False):
+        def inner_function(trader, start_date):
+            start_time = Helper.string_to_timestamp(start_date)*1000
+            end_time = Helper.string_to_timestamp(str(datetime.now())[:19])*1000
+            current_profit = trader.get_current_trade_progress(printout=False)['pnl (USD)'].sum()
+
+            th_full = trader.load_futures_trading_history(start_time, end_time)
+
+            th_full['realizedPnl'] = th_full['realizedPnl'].astype(float)
+
+            th = th_full[['realizedPnl']].copy()
+            th = th.append(pd.DataFrame([current_profit], columns=['realizedPnl'])).reset_index(drop=True)
+
+            th['cumulative'] = th['realizedPnl'].cumsum() + 100
+
+            fig = px.line(data_frame=th[['cumulative']])
+            fig.update_xaxes(title_text='# of Trades')
+            fig.update_yaxes(title_text='Account Balance')
+
+
+            # fig.show()
+            return fig
+        if continuous:
+            while True:
+                func = inner_function(trader, start_date)
+                Helper.sleep(3600)
+                return func
+        return inner_function(trader, start_date)
+
 
     def add_sma_to_df(self, df, extra_mas=False):
         self.strategy.load_data(df)
