@@ -50,9 +50,10 @@ class Trader():
     """
     max_candle_history = 231
 
-    def __init__(self, qtrade=False, db=False, ib=False):
-        self.start = False
-        self.binance = Client()
+    def __init__(self, binance=True, qtrade=False, db=False, ib=False):
+        if binance:
+
+            self.binance = Client()
         self.ftx = FtxClient()
         self.capital = None
         self.leverage = 1 / 1000
@@ -64,8 +65,9 @@ class Trader():
         self.illustrator = Illustrator()
         self.strategy = FabStrategy()
         self.df = None
-        self.exit_trade_info = pd.DataFrame()
-        self.enter_trade_info = pd.DataFrame()
+        self.order_history = pd.DataFrame()
+        self.trade_replay = []
+        self.precisions = {symbol_dic['symbol'] : symbol_dic['quantityPrecision'] for symbol_dic in self.loader.binance.futures_exchange_info()['symbols']}
 
     def check_on_switch(self) -> bool:
         """
@@ -132,6 +134,18 @@ class Trader():
         self.capital = ftx_balance + binance_balance + additional_balance
         return self.capital
 
+
+    def load_futures_trading_history(self, start_time, end_time=None):
+        df = pd.DataFrame()
+        ranges = Helper.determine_timestamp_positions(start_time, end_time, limit=7) 
+
+        for index, timestamp in enumerate(ranges):
+            try:
+                df = df.append(pd.DataFrame(self.binance.futures_account_trades(startTime=ranges[index], endTime=ranges[index+1])))
+            except (IndexError) as e:
+                pass
+        return df.reset_index(drop=True)
+
     def set_leverage(self, leverage: float) -> float:
         """Sets the current leverage of the account: should normally be 1. And 0.001 for testing purposes"""
         self.leverage = leverage
@@ -169,7 +183,7 @@ class Trader():
         return df.drop_duplicates()
 
 
-    def get_necessary_data(self, symbol: str, tf: int, max_candles_needed:int = 235) -> pd.DataFrame:
+    def get_necessary_data(self, symbol: str, tf: int, max_candles_needed:int = 245) -> pd.DataFrame:
         """
         Gets the minimum necessary data to trade this asset.
 
@@ -191,7 +205,7 @@ class Trader():
         crypto = 'USDT' in symbol or 'BUSD' in symbol
 
         if crypto:
-            ranges = Helper.determine_candle_positions(max_candles_needed, tf)
+            ranges = Helper.determine_candle_positions(max_candles_needed, tf) 
             for i in range(len(ranges)):
                 try:
                     df = df.append(self.loader._get_binance_futures_candles(symbol, tf, int(ranges[i]), int(ranges[i + 1]), now))
@@ -234,7 +248,7 @@ class Trader():
         # Updating original data with new data.
         self.df = self.df.append(last_few_candles).drop_duplicates()
 
-    def get_positions_amount(self, list_of_symbols: list, divide_by=1) -> list:
+    def get_positions_amount(self, list_of_symbols: list, divide_by=None, max_trades=3) -> list:
         """
         Gets the total amount of current position for a given symbol
         Parameters:
@@ -248,14 +262,30 @@ class Trader():
         """
         position_values = {}
         for symbol in list_of_symbols:
+            last_price = float(self.binance.futures_mark_price(symbol=symbol)['markPrice'])
             for coin_futures_info in self.binance.futures_position_information():
                 if coin_futures_info['symbol'] == symbol:
                     amount = float(coin_futures_info["positionAmt"])
-                    # sig_dig_amount = Helper.sig_fig(amount/divide_by)
-                    position_values[symbol] = amount - amount/divide_by
+                    amount = round(amount, self.precisions[symbol])
+                    if divide_by:
+                        amount = round(amount - amount/divide_by, self.precisions[symbol])
+                        print(amount*last_price)
+                        if self.capital / max_trades > amount*last_price:
+                            return None
+                        position_values[symbol] = amount if amount > 0 else 10**(-self.precisions[symbol])
+                    else:
+                        position_values[symbol] = amount 
         return position_values
 
-    def set_asset_v2(self, symbol: str, tf: int, max_candles_needed: int = 231, v2=False) -> pd.DataFrame:
+    def get_single_asset_signals(self, screener, symbol, tf, enter=True):
+        df = self.set_asset_v2(symbol, tf, max_candles_needed=245)
+        binance_df = int(df['tf'].iloc[0])
+        df_tf = self.loader._timeframe_setter(df, tf//binance_df, keep_last_row=True, shift=0)
+        strat = FabStrategy()
+        df_ma = strat.load_data(df_tf)
+        return df_ma, screener._check_for_tf_signals(df_ma, max_candle_history=10, enter=enter)
+        
+    def set_asset_v2(self, symbol: str, tf: int, max_candles_needed: int = 245, v2=False) -> pd.DataFrame:
         binance_tf = Helper.find_greatest_divisible_timeframe(tf)
         new_max_candles = max_candles_needed*(tf//binance_tf)
         if v2:
@@ -265,7 +295,7 @@ class Trader():
         self.df, self.tf, self.symbol= df, tf, symbol
         return df
 
-    def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 231, keep_last_row=False) -> pd.DataFrame:
+    def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 245, keep_last_row=False) -> pd.DataFrame:
         """
         Set Symbol of the symbol and load the necessary data with the given timeframe to trade it
 
@@ -306,10 +336,10 @@ class Trader():
         minute_candles['Datetime'] = Helper.millisecond_timestamp_to_datetime(minute_candles.index)
         minute_candles = minute_candles[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
 
-        tf_candle = self.loader._timeframe_setter(minute_candles, tf, drop_last_row=False)
+        tf_candle = self.loader._timeframe_setter(minute_candles, tf, keep_last_row=True)
         return tf_candle
 
-    def load__existing_asset(self, df: pd.DataFrame) -> pd.DataFrame:
+    def load_existing_asset(self, df: pd.DataFrame) -> pd.DataFrame:
         """Sets the trading data to an already existing dataframe, passed in as an argument"""
         self.df = df
         return self.df
@@ -418,161 +448,39 @@ class Trader():
             enter_price = float(symbol_info['entryPrice'])
             last_price = float(symbol_info['markPrice'])
             if side == 'SELL':
-                pnl = Helper.calculate_short_profitability(enter_price, last_price, 0.99975)
+                pnl = Helper.calculate_short_profitability(enter_price, last_price, 0.99975, percentage=True)
             elif side == 'BUY':
-                pnl = Helper.calculate_long_profitability(enter_price, last_price, 0.99975)
+                pnl = Helper.calculate_long_profitability(enter_price, last_price, 0.99975, percentage=True)
             usd_size = abs(round(position_size * enter_price, 2))
-            pnl_usd = usd_size*(pnl-1)
+            pnl_usd = usd_size*(pnl/100)
             trade_progress = trade_progress.append(pd.DataFrame([[symbol, side, enter_price, abs(position_size), usd_size, last_price, pnl, pnl_usd]],
                                                             columns = ['symbol', 'side', 'enter_price', 'size', 'usd size', 'current_price', 'pnl (%)' , 'pnl (USD)']),
                                                 ignore_index=True)
+            trade_progress['position share'] = trade_progress['usd size'] / trade_progress['usd size'].sum()
+            portfolio_pnl = (trade_progress['position share']*trade_progress['pnl (%)']).sum()
         if printout:
+            print(f"Portfolio Profit: {round(portfolio_pnl,2)}%")
             display(trade_progress)
 
         self.trade_progress = trade_progress
         return trade_progress
 
-    def profit_optimization(self, signals, trade_progress_partial, screener):
-        print()
-        print("Optimizing Trades:... ")
-        trades_to_close, trades_to_enter = [], []
-        trade_metrics = self.trade_metrics if type(self.trade_metrics) != type(None) else pd.read_csv("Current metrics for current_trades.csv").set_index('symbol')
-
-        if len(trade_progress_partial) == 0 or len(trade_metrics) == 0:
-            return [], []
-
-        signals = self.drop_existing_enters(signals, trade_progress_partial)
-        potentials = signals['peak_unrealized_profit'].sort_values(ascending=False)
-
-
-        trade_metrics[['date', 'due date']] = trade_metrics[['date', 'due date']].astype('datetime64')
-        trade_progress = trade_progress_partial.merge(trade_metrics.reset_index(), on='symbol').set_index('symbol')
-        trade_progress['delta profit'] = trade_progress['peak_unrealized_profit'] - trade_progress['pnl']
-        trade_progress['candles left'] = ((trade_progress['due date'] - datetime.now()).dt.total_seconds() // trade_progress['tf']).astype('int64')
-
-        if len(signals) == 0:
-            trades_to_close = self.check_trade_close(screener, trade_progress, trades_to_close)
-
-        trades_to_close, trades_to_enter = self.check_other_signals(potentials, signals, trade_progress, trades_to_close, trades_to_enter)
-
-        self.new2 = signals, potentials, trade_metrics, trades_to_close, trades_to_enter
-
-        return self.check_enter_exit_trap(trades_to_close, trades_to_enter)
-
-    def drop_existing_enters(self, signals, trade_progress_partial):
-        for symbol, tf in signals.index:
-            if symbol in trade_progress_partial['symbol'].values:
-                signals = signals.drop((symbol, tf))
-        return signals
-
-    def check_enter_exit_trap(self, trades_to_close, trades_to_enter):
-        for symbol, tf in trades_to_enter:
-            if symbol in trades_to_close:
-                trades_to_enter.remove((symbol, tf))
-                trades_to_close.remove(symbol)
-        return trades_to_close, trades_to_enter
-
-    def update_current_trade_metrics(self):
-        df_all_signals = pd.read_csv("Recent signals.csv").set_index(["symbol", "tf"])
-        df_all_signals['date'] = df_all_signals['date'].astype('datetime64')
-        trade_metrics = pd.DataFrame()
-        trade_progress = self.monitor_trades(printout=False)
-        self.trade_progress = trade_progress
-
-        if len(df_all_signals) == 0 or len(trade_progress)==0:
-            return None
-
-        for symbol, tf in df_all_signals.index:
-            if symbol in trade_progress['symbol'].values:
-                trade_metrics = trade_metrics.append(df_all_signals.loc[[(symbol, tf)]])
-
-        trade_metrics.to_csv("Current metrics for current_trades.csv")
-        display(trade_metrics)
-
-        self.trade_metrics = trade_metrics
-        return trade_metrics
-
-    # def update_current_trade_metrics(self, potentials, trade_metrics, trades_to_close, trades_to_enter):
-    #     for symbol, tf in trade_metrics.index:
-    #         if symbol in trades_to_close:
-    #             trade_metrics.drop((symbol, tf), inplace=True)
-    #     for symbol, tf in potentials.index:
-    #         if (symbol, tf) in trades_to_enter:
-    #             trade_metrics = trade_metrics.append(potentials.loc[(symbol, tf), :])
-    #     print(trades_to_close, trades_to_enter)
-    #     display(trade_metrics)
-    #     trade_metrics.to_csv("Current metrics for current_trades.csv")
-    #     self.trade_metrics = trade_metrics
-
-    def check_other_signals(self, potentials, signals, trade_progress, trades_to_close, trades_to_enter):
-        for symbol, tf in potentials.index:
-            if len(trade_progress['delta profit']) == 0:
-                break
-
-            if potentials.loc[(symbol, tf)] - 1 > min(trade_progress['delta profit']) + 0.0075:
-                side = signals.loc[(symbol, tf), 'signal'][1]
-                index_of_trade = trade_progress['delta profit'].idxmin()
-
-                trades_to_close.append(index_of_trade)
-                print('trades switched')
-                trade_progress.drop(index_of_trade, inplace=True)
-                trades_to_enter.append((symbol, side))
-        return trades_to_close, trades_to_enter
-
-    def score_calculator(self, df_current, df_length, date=False, gain=False):
-        weight_dic = {}
-        if date:
-            weight_dic_x = np.round(np.linspace(0, 100, 1001), 1)
-            weight_dic_y = np.round(1.03 ** (weight_dic_x - 80), 5)
-            weight_dic = dict(zip(weight_dic_x, weight_dic_y))
-
-        elif gain:
-            weight_dic_neg_x = np.round(np.linspace(-50, 0.1, 500), 1)
-            weight_dic_neg_y = np.round(15/(weight_dic_neg_x**2 + 15), 5)
-            weight_dic_pos_x = np.round(np.linspace(0, 100, 1001), 1)
-            weight_dic_pos_y = np.round(0.985**weight_dic_pos_x, 5)
-            weight_dic_x = np.append(weight_dic_neg_x, weight_dic_pos_x)
-            weight_dic_y = np.append(weight_dic_neg_y, weight_dic_pos_y)
-            weight_dic = dict(zip(weight_dic_x, weight_dic_y))
-
-        if not weight_dic:
-            raise Exception("date and gain are both set to False. Set one to true")
-
-        relative_current = np.round((1-df_current/df_length)*100, 1)
-        score = pd.Series([weight_dic[value] for value in relative_current])
-        return score * df_current
-
-    def check_trade_close(self, screener, trade_progress, trades_to_close, max_candle_history=10):
-        trade_progress = trade_progress.reset_index().drop_duplicates(subset='symbol').set_index('symbol')
-        for symbol in trade_progress.index:
-            tf = trade_progress.loc[symbol, 'tf']
-            df = self.set_asset(symbol=symbol, tf=tf, max_candles_needed=231 + max_candle_history)
-            close_signal, *other = screener.check_for_signals(df, self.strategy,
-                                                              max_candle_history=max_candle_history, exit=True)
-            # print(close_signal)
-            if close_signal:
-                trades_to_close.append(symbol)
-                print('trade closed from rules')
-                continue
-            tf = trade_progress.loc[symbol, 'tf']
-            elapsed_candles = int(
-                (datetime.now() - trade_progress['date'].loc[symbol]).total_seconds() // (60 * tf) + 1)
-
-            if elapsed_candles > trade_progress['num_candles_to_peak'].loc[symbol]:
-                trades_to_close.append(symbol)
-                print('trade closed from exceeding candles')
-        return trades_to_close
-
     def _check_trade_close(self, screener: Screener, current_positions, tfs):
         trades_to_close = []
         current_position_symbols = current_positions['symbol'].values
         # current_position_dfs = {symbol:screener.clean_results[symbol] for symbol in current_position_symbols}
+
         for symbol in current_position_symbols:
             for tf in tfs:
                 try:
                     df = screener.df_dic[(symbol, tf)]
-                    close_signal, *other = screener._check_for_tf_signals(df, max_candle_history=10, exit=True)
+                    enter_signal, enter_x_last_row, *rest= screener._check_for_tf_signals(df, max_candle_history=10, enter=True)
+                    close_signal, exit_x_last_row, *rest= screener._check_for_tf_signals(df, max_candle_history=10, enter=False)
+                    
                     if close_signal:
+                        if enter_x_last_row and exit_x_last_row < enter_x_last_row:
+                            continue
+                        print(enter_x_last_row, exit_x_last_row)
                         trades_to_close.append(symbol)
                         print(f'{symbol} Trade Closed')
                 except AttributeError as e:
@@ -595,97 +503,128 @@ class Trader():
         time.sleep(0.3)
 
     def trade_free_capital(self, executor, leverage, remaining_to_invest, trades_to_enter):
+        print("-----------------------------------------------")
         print(f"Free capital: {remaining_to_invest} USD")
-        self.df_orders = executor.enter_market(client=self.binance, symbol_side_pair=trades_to_enter, capital=remaining_to_invest, leverage=leverage, number_of_trades=1)
-        display(self.df_orders)
-        self.enter_trade_info = self.enter_trade_info.append(self.df_orders)
-        self.enter_trade_info.to_csv("FAB Order History.csv")
+        print("-----------------------------------------------", end="\n\n\n")
 
-    def calculate_remaining_capital(self, current_positions, capital):
+        self.order_history = self.order_history.append(executor.enter_market(client=self.binance, symbol_side_rule=trades_to_enter, capital=remaining_to_invest, 
+                                                                             number_of_trades=len(trades_to_enter), reason='free_capital'))
+        display(self.order_history.tail(len(trades_to_enter)))
+        self.order_history.to_csv("FAB Order History.csv")
+        self.trade_replay.append(self.get_current_trade_progress(printout=False))
+
+    def calculate_remaining_capital(self, current_positions, capital, leverage):
         total_invested = current_positions['usd size'].sum() if len(current_positions) > 0 else 0
-        remaining_to_invest = capital - total_invested
+        remaining_to_invest = capital*leverage - total_invested
         return remaining_to_invest
 
-    def optimize_trades(self, executor, current_positions, leverage, df_metrics, trades_to_enter, number_of_trades):
+    def _profit_optimization(self, essential_metrics, current_positions, trades_to_enter, number_of_trades):
+        """
+        Returns:
+            final_trades_to_enter: Ex. [('ZILUSDT', "Short", 'Rule 2'), ('BTCUSDT', 'Long', 'Rule 1'), ("ETHUSDT", "Short", 'Rule 3')]
+            trades_to_close:       Ex. ['ADAUSDT']
+        """
+        print()
+        print("Optimizing Trades:... ")
+        
+        temp_metrics = essential_metrics.reset_index().set_index(['symbol', 'rule no', 'side'])
+        trades_of_interest = [(symbol, int(temp_metrics.loc[(symbol, rule, side), 'tf']))  for symbol, side, rule in trades_to_enter]
+
+        ranks = essential_metrics[essential_metrics['amount of data'] >= 5].sort_values('avg pnl', ascending=False)
+        pure_ranks = ranks[ranks['avg pnl'] > 1.01].reset_index().set_index(['symbol', 'tf'])
+        # key = ranks.groupby('symbol').max().sort_values('avg pnl', ascending=False)
+        self.key = pure_ranks
+
+        current_positions_df = pd.read_csv("Recent Signals.txt").set_index(['symbol', 'tf'])
+        current_position_symbols_tf_pair = current_positions_df.reset_index().merge(current_positions, on ='symbol', how='inner')[['symbol','tf']].values
+        current_position_symbols_tf_pair = Helper().nparray_to_tuple(current_position_symbols_tf_pair)
+
+        all_symbols = list(set(trades_of_interest).union(set(current_position_symbols_tf_pair)))
+
+        self.top_x_symbols = sorted(all_symbols, key=lambda x: self.key.loc[x]['avg pnl'], reverse=True)[:number_of_trades]
+
+        partial_trades_to_enter = list(set(self.top_x_symbols).intersection(set(trades_of_interest)).difference(set(current_position_symbols_tf_pair)))
+        trades_to_close = list(set(current_position_symbols_tf_pair).difference(set(self.top_x_symbols)))
+
+        final_trades_to_enter = [(symbol, side, rule) for (symbol, tf), (symbol, side, rule) in zip(trades_of_interest, trades_to_enter) if (symbol,tf) in partial_trades_to_enter]
+
+        return trades_to_close, final_trades_to_enter
+
+    def optimize_trades(self, executor, current_positions, leverage, essential_metrics, trades_to_enter, number_of_trades):
         if len(current_positions) != 0:
-            self.capital = current_positions['usd size'].sum()
-            trades_to_close, final_trades_to_enter = self._profit_optimization(df_metrics, current_positions, trades_to_enter, number_of_trades)
+            self.position_capital = float(self.binance.futures_account()['totalMarginBalance'])*leverage
+            trades_to_close, final_trades_to_enter = self._profit_optimization(essential_metrics, current_positions, trades_to_enter, number_of_trades)
+            
             if trades_to_close:
-                self.close_trade_info = executor.exit_market(self.binance, self.get_positions_amount(trades_to_close))
+                self.order_history = self.order_history.append(executor.exit_market(self.binance, self.get_positions_amount(trades_to_close), reason='lower rank'))
                 display(self.close_trade_info)
+                current_positions = self.get_current_trade_progress(printout=False)
             if trades_to_enter:
                 dividing_factor = (len(current_positions) + len(trades_to_enter))/len(current_positions)
-                positions_amount = self.get_positions_amount(current_positions['symbol'].values, divide_by=dividing_factor)
-                print(positions_amount)
-
-                self.exit_trade_info = self.exit_trade_info.append(executor.exit_market(self.binance, positions_amount))
-                self.enter_trade_info = self.enter_trade_info.append(executor.enter_market(self.binance, final_trades_to_enter, self.capital, leverage, number_of_trades))
-                self.enter_trade_info.to_csv("FAB Order History.csv")
-                display(self.enter_trade_info)
+                positions_amount = self.get_positions_amount(current_positions['symbol'].values, divide_by=dividing_factor, max_trades=number_of_trades)
+                if positions_amount:
+                    self.order_history = self.order_history.append(executor.exit_market(self.binance, positions_amount, reason='making space'))
+                self.position_capital = float(self.binance.futures_account()['totalMarginBalance'])*leverage
+                self.order_history = self.order_history.append(executor.enter_market(self.binance, final_trades_to_enter, self.position_capital, number_of_trades, reason='higher rank'))
+                display(self.order_history)
             else:
                 print("No Trades made")
+        self.order_history.to_csv("FAB Order History.csv")
+        self.trade_replay.append(self.get_current_trade_progress(printout=False))
 
     def close_any_old_trades(self, screener, executor, current_positions, tfs):
         if len(current_positions) == 0:
             return False
         trades_to_close = self._check_trade_close(screener, current_positions, tfs)
         if trades_to_close:
-            self.close_trade_info = executor.exit_market(self.binance, self.get_positions_amount(trades_to_close))
+            self.order_history = self.order_history.append(executor.exit_market(self.binance, self.get_positions_amount(trades_to_close), reason='trade closed'))
 
-    def _profit_optimization(self, df_metrics, current_positions, trades_to_enter, number_of_trades):
-        """
-        Returns:
-            final_trades_to_enter: Ex. [('ZILUSDT', "Short"), ('BTCUSDT', 'Long'), ("ETHUSDT", "Short")]
-            trades_to_close:       Ex. ['ADAUSDT']
-        """
-        print()
-        print("Optimizing Trades:... ")
-        trades_of_interest = [symbol for symbol, side in trades_to_enter]
-        ranks = df_metrics[df_metrics['amount of data'] >= 5].sort_values('avg pnl', ascending=False)
-        key = ranks.groupby('symbol').max().sort_values('avg pnl', ascending=False)
-        current_positions_symbols = list(current_positions['symbol'].values)
-
-        all_symbols = list(set(trades_of_interest).union(set(current_positions_symbols)))
-        self.top_x_symbols = sorted(all_symbols, key=lambda x: key.loc[x]['avg pnl'], reverse=True)[:number_of_trades]
-
-        partial_trades_to_enter = list(set(self.top_x_symbols).intersection(set(trades_of_interest)).difference(set(current_positions_symbols)))
-        trades_to_close = list(set(current_positions_symbols).difference(set(self.top_x_symbols)))
-
-        final_trades_to_enter = [(symbol, side) for symbol, side in trades_to_enter if symbol in partial_trades_to_enter]
-
-        return trades_to_close, final_trades_to_enter
+    def update_trades_to_enter(self, current_positions, trades_to_enter):
+        if len(trades_to_enter) ==0:
+            trades_to_enter = [(symbol, self.executor.dic[side], None) for symbol, side in current_positions[['symbol','side']].values]
+        return trades_to_enter
 
     def monitor_fab(self, screener: Screener, df_metrics, tfs, number_of_trades=3, leverage=0.001, recency=-1):
+        # self.order_history = pd.DataFrame()
         self.load_account()
         executor = self.executor
         self.capital = self.get_capital()
         self.leverage = leverage
         self.load_account()
-
+        essential_metrics = Helper.drop_extra_delays(df_metrics, screener.tf_delay_match)
 
         now = Helper.current_minute_datetime()
         while True:
             if datetime.now() >= now + pd.Timedelta(1, 'minute'):
                 clear_output(wait=True)
-                print(datetime.now())
+                print("Current time: \t", datetime.now(), end='\n\n')
 
                 current_positions = self.get_current_trade_progress()
+
                 self.close_any_old_trades(screener, executor, current_positions, tfs)
 
-                remaining_to_invest = self.calculate_remaining_capital(current_positions, self.capital)
-                self.remaining_capital = remaining_to_invest*leverage
+                self.remaining_capital = self.calculate_remaining_capital(current_positions, self.capital, leverage)
 
                 ## trades_to_enter is a list of lists (Ex. [('BANDUSDT', 'Short'), ('BCHUSDT', 'Short')]
                 ## df_recent_signals is a regular screener dataframe
                 trades_left = number_of_trades - len(current_positions)
                 trades_to_enter, df_recent_signals = screener.top_trades(trader=self, df_metrics=df_metrics, tfs=tfs, n=trades_left, recency=recency)
+                self.trades_to_enter, self.df_recent_signals = trades_to_enter, df_recent_signals
+
+                print("Signals:")
                 display(df_recent_signals)
 
-                if self.remaining_capital > 50 and trades_to_enter:
+                if self.remaining_capital > 50 and trades_left > 0 and trades_to_enter:
+                    self.trade_free_capital(executor, self.leverage, self.remaining_capital, trades_to_enter)
+
+                elif self.remaining_capital >50 and len(current_positions) != 0:
+                    trades_to_enter = self.update_trades_to_enter(current_positions=current_positions, trades_to_enter=trades_to_enter)
                     self.trade_free_capital(executor, self.leverage, self.remaining_capital, trades_to_enter)
                 else:
-                    print(self.leverage, trades_to_enter, number_of_trades)
-                    self.optimize_trades(executor, current_positions, self.leverage, df_metrics, trades_to_enter, number_of_trades)
+                    print("Leverage: ", self.leverage)
+                    print("Trades to Enter: ", trades_to_enter)
+                    print("Max Trades: ", number_of_trades)
+                    self.optimize_trades(executor, current_positions, self.leverage, essential_metrics, trades_to_enter, number_of_trades)
                 Helper.sleep(60)
                 now = Helper.current_minute_datetime()
                 print()

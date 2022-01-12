@@ -1,4 +1,5 @@
 from datetime import datetime
+from os import symlink
 
 import pandas as pd
 
@@ -42,15 +43,15 @@ class TradeExecutor:
         self.loader = _DataLoader(db=False)
         self.precisions = {symbol_dic['symbol'] : symbol_dic['quantityPrecision'] for symbol_dic in self.loader.binance.futures_exchange_info()['symbols']}
         
-    @staticmethod
-    def how_much_to_buy(capital, leverage, last_price: str, precision) -> float:
+    def how_much_to_buy(self, capital, last_price: str, precision) -> float:
         """Formula that calculates the position size"""
-        significant = Helper.sig_fig(capital * leverage / float(last_price), 4)
+        significant = Helper.sig_fig(capital / float(last_price), 4)
         if significant.is_integer():
             return int(significant)
-        return round(significant, precision)
+        result = round(significant, precision)
+        return result
 
-    def enter_market(self, client, symbol_side_pair, capital, leverage=0.001, number_of_trades=3) -> list:
+    def enter_market(self, client, symbol_side_rule, capital, number_of_trades=3, reason=None) -> list:
         """
         Creates a order in the exchange, given the symbol
 
@@ -58,53 +59,33 @@ class TradeExecutor:
         ------------
         symbol: str       Ex. "BTCUSDT", "ETHUSDT"
         side: str         Ex. 'BUY', SELL'
-        leverage: float   Ex. 0.001, 0.500, 1.000
         rule_no: int      Ex.  1, 2, 3
 
-        Returns: dict
-            Ex. {'orderId': ***********,
-                 'symbol': 'BTCUSDT',
-                 'status': 'FILLED',
-                 'clientOrderId': '**************',
-                 'price': '0',
-                 'avgPrice': '27087.68000',
-                 'origQty': '0.001',
-                 'executedQty': '0.001',
-                 'cumQuote': '27.08768',
-                 'timeInForce': 'GTC',
-                 'type': 'MARKET',
-                 'reduceOnly': False,
-                 'closePosition': False,
-                 'side': 'SELL',
-                 'positionSide': 'BOTH',
-                 'stopPrice': '0',
-                 'workingType': 'CONTRACT_PRICE',
-                 'priceProtect': False,
-                 'origType': 'MARKET',
-                 'time': 1609197914670,
-                 'updateTime': 1609197914825}
         """
 
-        #         assert self.how_much_to_buy(last_price) <= self.capital*leverage/last_price + 1
         df_trade_info = pd.DataFrame()
-            
-        list_of_symbols = [symbol for symbol, side in symbol_side_pair]
+
+        list_of_symbols = [symbol for symbol, side, rule in symbol_side_rule]
         print(f"Entering: {', '.join(list_of_symbols)} ")
 
-        for symbol, side in symbol_side_pair:
+        for symbol, side, rule in symbol_side_rule:
             last_price = self.loader._get_binance_futures_candles(symbol, tf=1, start_candles_ago=2).iloc[-1, 3]
             enter_market_params = {
                 'symbol': symbol,
                 'side': self.inverse_dic[side],
                 'type': 'MARKET',
-                'quantity': self.how_much_to_buy(capital//number_of_trades, leverage, last_price, self.precisions[symbol])
+                'quantity': self.how_much_to_buy(capital//number_of_trades, last_price, self.precisions[symbol])
             }
             latest_trade = client.futures_create_order(**enter_market_params)
             trade_info = client.futures_get_order(symbol=symbol, orderId=latest_trade["orderId"])
             df_trade_info = df_trade_info.append(pd.DataFrame([trade_info.values()], columns=trade_info.keys()), ignore_index=True)
+            df_trade_info = df_trade_info.drop(['price', 'reduceOnly', 'closePosition', 'positionSide', 'stopPrice',
+                                                'workingType', 'priceProtect','updateTime', 'origType'], axis=1).set_index('orderId')
+            df_trade_info[['enter', 'reason', 'rule']] = [True, reason, rule]
+            self.last_trade = df_trade_info
         return df_trade_info
 
-    def exit_market(self, client, positions: dict) -> list:
+    def exit_market(self, client, positions: dict, reason=None) -> list:
         """
         Considers the current position you have for a given symbol, and closes it accordingly
 
@@ -116,7 +97,7 @@ class TradeExecutor:
         Returns: dict     Ex. see "enter_market" description
         """
         df_trade_info = pd.DataFrame()
-        list_of_symbols = [symbol for symbol, position in positions.items()]
+        list_of_symbols = [symbol for symbol, rest in positions.items()]
         print(f"Exiting: {', '.join(list_of_symbols)} ")
         for symbol, position_amount in positions.items():
             side = "BUY" if position_amount < 0 else "SELL"
@@ -131,6 +112,10 @@ class TradeExecutor:
             latest_trade = client.futures_create_order(**exitMarketParams)
             trade_info = client.futures_get_order(symbol=symbol, orderId=latest_trade["orderId"])
             df_trade_info = df_trade_info.append(pd.DataFrame([trade_info.values()], columns=trade_info.keys()), ignore_index=True)
+            df_trade_info = df_trade_info.drop(['price', 'reduceOnly', 'closePosition', 'positionSide', 'stopPrice',
+                                    'workingType', 'priceProtect','updateTime', 'origType'], axis=1).set_index('orderId')
+            df_trade_info[['enter', 'reason', 'rule']] = [False, reason, None]
+            self.last_trade = df_trade_info
         return df_trade_info
 
     def stop_market(self, client, symbol: str, price: float, position_amount: float) -> list:
@@ -163,7 +148,7 @@ class TradeExecutor:
 
         return self.latest_trade_info
 
-    def enter_limit(self, client, symbol: str, side: str, price: float, capital, leverage: float) -> list:
+    def enter_limit(self, client, symbol: str, side: str, price: float, capital) -> list:
         """
         Sets a limit order at a given price for a given symbol
 
@@ -171,7 +156,6 @@ class TradeExecutor:
         ------------
         symbol: str       Ex. "BTCUSDT", "ETHUSDT"
         side: str         Ex. 'BUY', SELL'
-        leverage: float   Ex. 0.001, 0.500, 1.000
         price: int        Ex.  10254, 530, 1.01
 
         Returns: dict     Ex. see "enter_market" desc
@@ -185,7 +169,7 @@ class TradeExecutor:
             'type': "LIMIT",
             'price': price,
             'timeInForce': "GTC",
-            'quantity': self.how_much_to_buy(capital, leverage, last_price)
+            'quantity': self.how_much_to_buy(capital, last_price)
         }
 
         self.latest_trade = client.futures_create_order(**enterLimitParams)
