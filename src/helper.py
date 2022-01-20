@@ -15,6 +15,21 @@ class Helper:
     SECONDS_IN_A_MINUTE = 60
 
     @staticmethod
+    def output_loading():
+        print('waiting for next minute...', end='\r')
+        time.sleep(0.3)
+        print('waiting for next minute.. ', end='\r')
+        time.sleep(0.3)
+        print('waiting for next minute.  ', end='\r')
+        time.sleep(0.3)
+        print('waiting for next minute   ', end='\r')
+        time.sleep(0.3)
+        print('waiting for next minute.  ', end='\r')
+        time.sleep(0.3)
+        print('waiting for next minute..  ', end='\r')
+        time.sleep(0.3)
+        
+    @staticmethod
     def sig_fig(x: float, sig: int = 2) -> float:
         """ Rounds to the number of significant digits indicated"""
         return round(x, sig - math.ceil(math.log10(abs(x))))
