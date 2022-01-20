@@ -51,7 +51,7 @@ class TradeExecutor:
         result = round(significant, precision)
         return result
 
-    def enter_market(self, client, symbol_side_rule, capital, number_of_trades=3, reason=None) -> list:
+    def enter_market(self, client, symbol_side_rule, remaining_capital, number_of_trades=3, reason=None, max_trade_size=None) -> list:
         """
         Creates a order in the exchange, given the symbol
 
@@ -59,22 +59,30 @@ class TradeExecutor:
         ------------
         symbol: str       Ex. "BTCUSDT", "ETHUSDT"
         side: str         Ex. 'BUY', SELL'
-        rule_no: int      Ex.  1, 2, 3
+        rule_no: int      Ex.  1, 2, 3  
 
         """
 
         df_trade_info = pd.DataFrame()
+        
+        if not symbol_side_rule:
+            return 
 
         list_of_symbols = [symbol for symbol, side, rule in symbol_side_rule]
         print(f"Entering: {', '.join(list_of_symbols)} ")
 
         for symbol, side, rule in symbol_side_rule:
             last_price = self.loader._get_binance_futures_candles(symbol, tf=1, start_candles_ago=2).iloc[-1, 3]
+
+            per_trade_size = remaining_capital//number_of_trades
+            if max_trade_size:
+                per_trade_size = max_trade_size if per_trade_size > max_trade_size else per_trade_size  
+
             enter_market_params = {
                 'symbol': symbol,
                 'side': self.inverse_dic[side],
                 'type': 'MARKET',
-                'quantity': self.how_much_to_buy(capital//number_of_trades, last_price, self.precisions[symbol])
+                'quantity': self.how_much_to_buy(per_trade_size, last_price, self.precisions[symbol])
             }
             latest_trade = client.futures_create_order(**enter_market_params)
             trade_info = client.futures_get_order(symbol=symbol, orderId=latest_trade["orderId"])

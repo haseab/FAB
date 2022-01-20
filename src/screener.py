@@ -2,6 +2,7 @@ import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from doctest import master
 
 import numpy as np
 import pandas as pd
@@ -252,7 +253,7 @@ class Screener:
         partial_screener = partial_screener.append(pd.DataFrame([[symbol, tf, date, rule, side, x_many_candles_ago, percentage_change]],
                                             columns=['symbol', 'tf', 'date', 'rule', 'side', 'how recent', "% change"]))
         return partial_screener
-    def _assemble_master_crypto_screener(self, trader, metrics_table, symbols, tfs, results, v2=None, skip_new_data=True, tf_only=True):
+    def _assemble_master_crypto_screener(self, trader, metrics_table, symbols, tfs, results, v2=None, skip_new_data=True, tf_only=True, show_all_trades=False):
         partial_screener = pd.DataFrame()
         metrics_bool = True
         self.df_dic = {}
@@ -298,8 +299,10 @@ class Screener:
             master_screener = master_screener.set_index(['symbol', 'tf']).sort_values(
                 ['most recent', 'how recent', 'avg pnl'], ascending=[False, False, False])
             master_screener = master_screener[['metric id'] + list(master_screener.columns.drop('metric id'))]
+            if show_all_trades:
+                return master_screener
             master_screener = master_screener[master_screener['amount of data'] >= 5]
-            master_screener = master_screener[master_screener['profitability']>1]
+            master_screener = master_screener[master_screener['avg pnl']>1.02]
         else:
             master_screener = partial_screener
             master_screener['most recent'] = master_screener.groupby('symbol')['how recent'].transform('max')  
@@ -415,7 +418,7 @@ class Screener:
     def top_trades(self, trader, df_metrics, tfs, n=3, full=False, recency=-1, top_n_trades=()):
         print("Getting Top New Trades:.... ")
         if len(top_n_trades) ==0:
-            top_n_trades = self.crypto_screen(trader=trader, metrics_table=df_metrics, tfs=tfs)
+            top_n_trades = self.crypto_screen_parts(trader=trader, metrics_table=df_metrics, tfs=tfs)
             self._update_recent_signals_csv(top_n_trades)
         df_filtered = top_n_trades[top_n_trades['how recent'] == recency].head(n)
         if full:
@@ -423,7 +426,7 @@ class Screener:
         if len(df_filtered) == 0:
             print("Found no new trades at this time", end='\n\n')
         top_recent_trades = self._add_signals_to_list(recency, top_n_trades)
-        return top_recent_trades[:n+1], df_filtered
+        return top_recent_trades, df_filtered
 
 
 
