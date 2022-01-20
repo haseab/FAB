@@ -1,10 +1,11 @@
 # My Ignored Files
+fab_strategy.py
 binance_api.txt
 FAB 4.0.ipynb
 local
 *.csv
 *.ipynb
-
+\.idea
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
