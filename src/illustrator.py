@@ -132,10 +132,10 @@ class Illustrator:
         self.graph_df(df_graph, position_side=position_side, flat=flat, tid=tid, save=save)
         return df_graph
 
-    def graph_df(self, df_graph, position_side=None, sma=True, space=0, flat=False, tid=None, extra_mas=False, save=False):
+    def graph_df(self, df_graph, position_side=None, sma=False, space=0, flat=False, tid=None, extra_mas=False, save=False):
 
         if df_graph.index.name != 'date':
-            df_graph = df_graph.reset_index().set_index('date')
+            df_graph = df_graph.reset_index(drop=True).set_index('date')
         try:
             df_graph['sma7']
         except KeyError:
@@ -175,4 +175,4 @@ class Illustrator:
         graph = mpf.plot(df_graph, type='candle', figratio=figratio, datetime_format='%Y-%m-%d %H:%M:%S',
                          tight_layout=True, xrotation=180, xlim=(0, len(df_graph)+space), style=self.haseab_style,
                          warn_too_much_data=10000, addplot=addplot)
-        
+        return df_graph.reset_index()

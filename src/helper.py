@@ -249,8 +249,6 @@ class Helper:
 
     @staticmethod
     def determine_candle_positions(max_candles_needed, tf):
-        # Ex. The 231 MA needs 231 candles of data to work. We use 4 more candles for safety.
-        max_candles_needed += 4
 
         # Formula for determining how many discrete 1000-candle sets are needed
         split_number = math.ceil(max_candles_needed / 1000) + 1

@@ -16,9 +16,9 @@ class SqlMapper:
         self.conn = None
         self.psql = False
 
-    def connect_psql(self):
+    def connect_psql(self, reset=False):
         self.psql = True
-        if not self.conn:
+        if not self.conn or reset:
             self.conn = psycopg2.connect(**self.kwargs)
             print(f"Connected to Postgres Database: {self.kwargs['database']}")
         return self.conn
@@ -157,8 +157,13 @@ class SqlMapper:
             return "Table name is not after FROM statement"
         return table_name
 
-    def SELECT(self, statement, cursor=None, psql = True):
-        cursor.execute("SELECT " + statement)
+    def SELECT(self, statement, cursor=None, psql = True, show_select=True):
+        if show_select:
+            new_statement = "SELECT " + statement
+            # print(new_statement)
+            cursor.execute(new_statement)
+        else:
+            cursor.execute(statement)
         results = cursor.fetchall()
         if psql:
             columns = [cursor.description[i].name for i in range(len(cursor.description))]

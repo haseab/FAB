@@ -151,12 +151,7 @@ class Screener:
             for symbol in symbols:
                 for tf in tfs:
                     start_datetime, end_datetime = Helper.datetime_from_tf(tf, qtrade=True, daily_1m_candles=daily_candles)
-                    # duration = (end_datetime - start_datetime).days + 1
                     future = executor.submit(trader.loader._get_fast_questrade_data, symbol, start_datetime, end_datetime, tf_map[tf], tf)
-                    # try:
-                    #     test = future.result()
-                    # except:
-                    #     time.sleep(0.01)
                     results.append((symbol, future))
             executor.shutdown(wait=True)
         return results
@@ -241,7 +236,7 @@ class Screener:
 
     def _get_binance_dfs(self, trader, symbols, max_candles_needed=245):
         with ThreadPoolExecutor(max_workers=9) as executor:
-            results = [(symbol, executor.submit(trader.set_asset_v2, symbol, 5, max_candles_needed*48, True)) for symbol in symbols['symbol'].values]
+            results = [(symbol, executor.submit(trader.set_asset, symbol, 5, max_candles_needed*48, False)) for symbol in symbols['symbol'].values]
             executor.shutdown(wait=True)
         return results
 

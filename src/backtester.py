@@ -117,13 +117,15 @@ class Backtester:
         self.end_date = end_date
         return self.start_date, self.end_date 
 
-    def load_backtesting_data(self, symbol=None, start_date=None, end_date=None, table_name="candlesticks", all_data=False):
+    def load_backtesting_data(self, symbol=None, start_date=None, end_date=None, table_name="candlesticks", all_data=True):
         cursor = self.loader.sql.conn.cursor()
         symbol = self.symbol if not symbol else symbol
         self.symbol = symbol
 
+        all_data = False if start_date else True
+
         if all_data:
-            df = self.loader.sql.SELECT(f"* FROM {table_name} WHERE SYMBOL = '{symbol}' AND TF = '1' ORDER BY timestamp", cursor)
+            df = self.loader.sql.SELECT(f"* FROM {table_name} WHERE SYMBOL = '{symbol}' AND TF = '1'", cursor)
 
         else:
             start_date = self.start_date if not start_date else start_date

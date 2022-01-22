@@ -1,7 +1,9 @@
 import json
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from unittest import result
 
 import dateparser
 import numpy as np
@@ -9,6 +11,7 @@ import pandas as pd
 import qtrade
 from binance.client import Client
 from ib_insync import IB, util
+from matplotlib.pyplot import table
 from pandas.core import base
 from qtrade import Questrade
 
@@ -36,16 +39,32 @@ class _DataLoader:
     SECOND_TO_MILLISECOND = 1000
 
     def __init__(self, db=False, qtrade=False, ib=False):
+        self.sql = SqlMapper()
         self.ib = IB()
         self.binance = Client()
         if qtrade:
             self.qtrade = Questrade(token_yaml='C:/Users/haseab/Desktop/Python/PycharmProjects/FAB/local/Workers/access_token.yml', save_yaml=True)
             print('Connected to Questrade API')
         if db:
-            self.sql = SqlMapper()
             self.conn = self.sql.connect_psql()
         if ib:
             print(self.ib.connect('127.0.0.1', 7496, 104))
+
+
+    def load_db_data(self, symbol, conns, chunks=3):
+        results = []
+        resp_df = self.sql.SELECT(f"explain select * from candlesticks where symbol = '{symbol}'", show_select=False, cursor=conns[0].cursor())
+        table_row_count = int(resp_df.loc[0,'QUERY PLAN'].split(' ')[-2].strip("rows="))
+        limit = table_row_count//chunks
+        
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            for chunk, conn in zip(range(0, table_row_count, limit), conns):
+                print('start')
+                cursor = conn.cursor()
+                results.append(executor.submit(self.sql.SELECT, f"* FROM candlesticks WHERE SYMBOL = '{symbol}' AND TF = '1' LIMIT {limit} OFFSET {chunk}", cursor))
+                print('done')
+            executor.shutdown(wait=True)
+        return results
 
     def _randomly_delete_rows(self, df, percentage_of_data=0.10):
         index_list = []
@@ -124,7 +143,7 @@ class _DataLoader:
 
         data = self.binance.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time, endTime=end_time, limit=num_candles)
 
-        return Helper.into_dataframe(data, symbol=symbol, tf=tf)
+        return Helper.into_dataframe(data, symbol=symbol, tf=tf, index=False)
 
     def load_finviz_data():
         import pandas as pd
