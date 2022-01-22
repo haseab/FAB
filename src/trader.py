@@ -1,11 +1,7 @@
 import math
 import os
-import random
 import time
 from datetime import datetime
-from hmac import new
-from turtle import position
-from typing import final
 
 import dateparser
 import numpy as np
@@ -48,35 +44,21 @@ class Trader():
 
     Please look at each method for descriptions
     """
-    max_candle_history = 231
 
     def __init__(self, binance=True, qtrade=False, db=False, ib=False):
         if binance:
             self.binance = Client()
         # self.ftx = FtxClient()
         self.capital = None
-        self.leverage = 1 / 1000
+        self.leverage = 1
         self.tf = None
         self.executor = TradeExecutor()
-        self.symbol = None
-        self.trade_metrics = None
         self.loader = _DataLoader(db=db, qtrade=qtrade, ib=ib)
         self.illustrator = Illustrator()
         self.strategy = FabStrategy()
-        self.df = None
         self.order_history = pd.DataFrame()
         self.trade_replay = []
         self.precisions = {symbol_dic['symbol'] : symbol_dic['quantityPrecision'] for symbol_dic in self.loader.binance.futures_exchange_info()['symbols']}
-
-    def check_on_switch(self) -> bool:
-        """
-        Reads a txt file to see whether user wants trading to be on or off
-        :return boolean of True or False. True means trading is on, and false means it is off.
-        """
-        local_path = os.path.dirname(os.path.dirname(os.path.abspath("__file__"))) + r"\local\trade_status.txt"
-        status = pd.read_csv(local_path).set_index('index')
-        self.start = bool(status.loc[0, 'status'])
-        return self.start
 
     def load_account(self, additional_balance: int = 0) -> str:
         """
@@ -97,46 +79,15 @@ class Trader():
         # self.ftx = FtxClient(api_key=API_KEY_FTX, api_secret=API_SECRET_FTX)
         return "Connected to Binance"
 
-    def get_capital(self, additional_balance=0, binance_only=True):
-
-        asset_prices = {symbol['symbol'][:-4]: float(symbol['lastPrice']) for symbol in self.binance.get_ticker() if symbol['symbol'][-4:] == 'USDT'}
-
-        # Binance  account balance
-        binance_account = self.binance.futures_account()
-        binance_futures_balance = float(binance_account['totalCrossWalletBalance']) # + float(binance_account['totalCrossUnPnl'])
-        binance_asset_balances = {symbol['asset']: (float(symbol['free']) + float(symbol['locked'])) for symbol in self.binance.get_account()['balances']}
-        binance_usdt_balance = binance_asset_balances["USDT"]
-
-        binance_spot_balance = 0
-        for binance_asset in binance_asset_balances:
-            if binance_asset in asset_prices:
-                binance_spot_balance += asset_prices[binance_asset] * binance_asset_balances[binance_asset]
-
-        binance_balance = binance_spot_balance + binance_usdt_balance + binance_futures_balance
-
-        if binance_only:
-            self.capital = binance_balance + additional_balance
-            return self.capital
-        # FTX  account balanced
-        # ftx_account = self.ftx.get_account_info()
-        # ftx_balance = ftx_account['totalAccountValue']
-
-        # ftx_asset_balances = {symbol['coin']:symbol['total'] for symbol in self.ftx.get_balances()}
-        # ftx_usdt_balance = ftx_asset_balances['USDT'] + ftx_asset_balances['USD']
-        #
-        # ftx_spot_balance = 0
-        # for ftx_asset in ftx_asset_balances:
-        #     if ftx_asset in asset_prices:
-        #         ftx_spot_balance += asset_prices[ftx_asset] * ftx_asset_balances[ftx_asset]
-        # ftx_balance = ftx_spot_balance + ftx_usdt_balance
-
-        self.capital =  binance_balance + additional_balance
-        return self.capital
-
+    def get_capital(self, additional_balance=0, include_pnl=False):
+        if include_pnl:
+            return float(self.binance.futures_account()['totalMarginBalance']) * self.leverage
+        self.capital = float(self.binance.futures_account()['totalCrossWalletBalance']) + additional_balance
+        return self.capital * self.leverage
 
     def load_futures_trading_history(self, start_time, end_time=None):
         df = pd.DataFrame()
-        ranges = Helper.determine_timestamp_positions(start_time, end_time, limit=7) 
+        ranges = Helper.determine_timestamp_positions(start_time, end_time, limit=1) 
 
         for index, timestamp in enumerate(ranges):
             try:
@@ -145,44 +96,41 @@ class Trader():
                 pass
         return df.reset_index(drop=True)
 
-    def set_leverage(self, leverage: float) -> float:
-        """Sets the current leverage of the account: should normally be 1. And 0.001 for testing purposes"""
-        self.leverage = leverage
-        return self.leverage
-
-    def set_timeframe(self, tf: int) -> int:
-        """Sets the timeframe of the trading data"""
-        self.tf = tf
-        return self.tf
+    def get_tickers(self):
+        tickers = pd.DataFrame(self.binance.futures_ticker())
+        tickers = tickers.rename({'lastPrice': 'close', 'openPrice':'open', 'highPrice':'high','lowPrice': 'low', 'openTime':'timestamp'}, axis=1)
+        tickers['date'] = Helper.millisecond_timestamp_to_datetime(tickers['timestamp'])
+        return tickers[['symbol', 'timestamp', 'date', 'open', 'high', 'low', 'close', 'volume']].set_index('symbol')
 
     def show_live_chart(self, symbol, tf, refresh_rate=1):
+        df_tf_sma = self.show_current_chart(symbol, tf)
         while True:
-            time.sleep(refresh_rate)
+            Helper.sleep(refresh_rate)
             clear_output(wait=True)
-            self.show_current_chart('BTCUSDT', tf)
+            df_tf_sma = self.show_current_chart(symbol, tf, data=df_tf_sma)
 
-    def show_current_chart(self, symbol=None, tf=None, metric_id=None):
-        if metric_id:
-            cursor = self.loader.conn.cursor()
-            df_metrics = self.loader.sql.SELECT(f"* FROM metrics where metric_id = {metric_id}", cursor)[['symbol', 'tf']]
-            symbol = df_metrics['symbol'].iloc[0]
-            tf = df_metrics['tf'].iloc[0]
+    def show_current_chart(self, symbol=None, tf=None, data=()):
+        if len(data)==0:
+            data = self.set_asset(symbol, tf, max_candles_needed=375, futures=True)
+        else:
+            row = self.set_asset(symbol, tf, max_candles_needed=1, futures=True)
+            if data['date'].iloc[-1] == row['date'].iloc[-1]:
+                data = data[:-1].append(row)
+            else:
+                data = data.append(row)
 
-        data = self.set_asset(symbol, tf, max_candles_needed=375, drop_last_row=False)
-        return self.illustrator.graph_df(data)
+        tf_data = data['tf'].iloc[0]
+        df_tf = self.loader._timeframe_setter(data, tf//tf_data, keep_last_row=True) if tf != tf_data else data
+        return self.illustrator.graph_df(df_tf, sma=False)
 
-    def get_necessary_data_v2(self, symbol: str, tf: int, max_candles_needed:int = 235) -> pd.DataFrame:
-        now = time.time()
+    def get_necessary_data(self, symbol: str, tf: int, max_candles_needed:int = 235) -> pd.DataFrame:
         df = pd.DataFrame()
-
-        # days = max_candles_needed*tf//1440 + 1
         start_datetime = str(Helper.datetime_from_tf(tf, daily_1m_candles=1440, max_candles_needed=max_candles_needed)[0])
         df = df.append(self.loader.get_binance_candles(symbol, tf, start_date=start_datetime))
         df['symbol'] = [symbol for _ in range(len(df))]
         return df.drop_duplicates()
 
-
-    def get_necessary_data(self, symbol: str, tf: int, max_candles_needed:int = 245) -> pd.DataFrame:
+    def get_necessary_data_futures(self, symbol: str, tf: int, max_candles_needed:int = 245) -> pd.DataFrame:
         """
         Gets the minimum necessary data to trade this asset.
 
@@ -200,253 +148,61 @@ class Trader():
         """
         now = time.time()
         df = pd.DataFrame()
-
-        crypto = 'USDT' in symbol or 'BUSD' in symbol
-
-        if crypto:
-            ranges = Helper.determine_candle_positions(max_candles_needed, tf) 
-            for i in range(len(ranges)):
-                try:
-                    df = df.append(self.loader._get_binance_futures_candles(symbol, tf, int(ranges[i]), int(ranges[i + 1]), now))
-                except IndexError:
-                    pass
-            df['symbol'] = [symbol for _ in range(len(df))]
-            return df.drop_duplicates()
-        else:
-            tf_map = {1: "OneMinute", 5: "FiveMinutes", 15: "FifteenMinutes", 30: "HalfHour", 
-                  60: "OneHour", 240: "FourHours", 1440: "OneDay"}
-            daily_candles = 350
-            how_many_days_ago = max_candles_needed*tf//daily_candles + 1
-            start_time, end_time = f"{how_many_days_ago} days ago" , 'now'
-            parsed_start, parsed_end = dateparser.parse(start_time), dateparser.parse(end_time)
-            parsed_start, parsed_end = parsed_start.strftime('%Y-%m-%d %H:%M:%S.%f'), parsed_end.strftime('%Y-%m-%d %H:%M:%S.%f')
-            data = self.loader.qtrade.get_historical_data(symbol, parsed_start, parsed_end, tf_map[tf])
-            return Helper.into_dataframe(data, symbol=symbol, tf=tf)
-
-    def _update_data(self, diff: int, symbol: str, ) -> None:
-        """
-        Used to update the trading data with the exchange data so that it is real time
-
-        Parameters:
-        -----------
-        diff: a number that explains how many minutes of disparity there is between current data and live data.
-
-        :return dataframe with the most up-to-date data.
-        """
-        minutes_disparity = math.floor(diff) + 1
-
-        # Getting minute candlestick data. Number of minute candlesticks represented by "minutes" variable
-        last_few_candles = self.loader._get_binance_futures_candles(symbol, minutes_disparity)
-        # Adding a legible Datetime column and using the timestamp data to obtain datetime data
-        last_few_candles['datetime'] = Helper.millisecond_timestamp_to_datetime(last_few_candles.index)
-        last_few_candles = last_few_candles[["datetime", "open", "high", "low", "close", "volume"]]
-
-        # Abstracting minute data into appropriate tf
-        last_few_candles = self.loader._timeframe_setter(last_few_candles, self.tf, 0)
-
-        # Updating original data with new data.
-        self.df = self.df.append(last_few_candles).drop_duplicates()
+        ranges = Helper.determine_candle_positions(max_candles_needed, tf) 
+        for i in range(len(ranges)):
+            try:
+                df = df.append(self.loader._get_binance_futures_candles(symbol, tf, int(ranges[i]), int(ranges[i + 1]), now))
+            except IndexError:
+                pass
+        df['symbol'] = [symbol for _ in range(len(df))]
+        return df.drop_duplicates()
 
     def get_single_asset_signals(self, screener, symbol, tf, enter=True, shift=0):
-        df = self.set_asset_v2(symbol, tf, max_candles_needed=245)
+        df = self.set_asset(symbol, tf, max_candles_needed=245)
         binance_df = int(df['tf'].iloc[0])
         df_tf = self.loader._timeframe_setter(df, tf//binance_df, keep_last_row=True, shift=shift)
         strat = FabStrategy()
         df_ma = strat.load_data(df_tf)
         return df_ma, screener._check_for_tf_signals(df_ma, max_candle_history=10, enter=enter)
         
-    def set_asset_v2(self, symbol: str, tf: int, max_candles_needed: int = 245, v2=False) -> pd.DataFrame:
+    def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 245, futures=False) -> pd.DataFrame:
         binance_tf = Helper.find_greatest_divisible_timeframe(tf)
         new_max_candles = max_candles_needed*(tf//binance_tf)
-        if v2:
-            df = self.get_necessary_data_v2(symbol, binance_tf, new_max_candles)
-        else:
-            df = self.get_necessary_data(symbol, binance_tf, new_max_candles)
+        if futures:
+            df = self.get_necessary_data_futures(symbol, binance_tf, new_max_candles)
+            return df
+        df = self.get_necessary_data(symbol, binance_tf, new_max_candles)
         self.df, self.tf, self.symbol= df, tf, symbol
         return df
-
-    def set_asset(self, symbol: str, tf: int, max_candles_needed: int = 245, keep_last_row=False) -> pd.DataFrame:
-        """
-        Set Symbol of the symbol and load the necessary data with the given timeframe to trade it
-
-        Parameters:
-        ------------
-        symbol: str     Ex. "BTCUSDT", "ETHUSDT"
-
-        :return str response
-        """
-        # For Binance API purposes, 240 min needs to be inputted as "4h" on binance when fetching data
-        map_tf = {1: "1m", 3: "3m", 5: "5m", 15: "15m", 30: "30m", 60: "1h", 120: "2h", 240: "4h", 360: "6h", 480: "8h"}
-        minutes_ago = tf * (max_candles_needed + 3)
-        start_time = Helper().minutes_ago_to_timestamp(minutes_ago, time.time(), 1000)
-
-        if tf in map_tf.keys():  # Note: 12H, 1D, 3D, 1W, 1M are also recognized
-            # Fetching data from Binance if it matches the eligible timeframe, as it will be faster
-            df = Helper.into_dataframe(
-                self.binance.futures_klines(symbol=symbol, interval=map_tf[tf], startTime=start_time), symbol=symbol, tf=tf)
-            df = df.reset_index().set_index(['symbol', 'tf', 'timestamp'])
-            if not keep_last_row:
-                df.drop(df.tail(1).index, inplace=True)
-        else:
-            # If it doesn't match Binance available timeframes, it must be transformed after fetching the least divisible timeframe data.
-            binance_tf = Helper.find_greatest_divisible_timeframe(tf)
-            df = self.get_necessary_data(symbol, binance_tf, max_candles_needed*(tf//binance_tf))
-            df = self.loader._timeframe_setter(df, tf//binance_tf, keep_last_row=keep_last_row)
-
-        # Adding Datetime column for readability of the timestamp. Also more formatting done
-        df = df[["date", "open", "high", "low", "close", "volume"]]
-
-        self.df = df
-        self.tf = tf
-        self.symbol = symbol
-        return df
-
-    def get_current_tf_candle(self, tf):
-        minute_candles = self.loader._get_binance_futures_candles("BTCUSDT", tf)
-        minute_candles['Datetime'] = Helper.millisecond_timestamp_to_datetime(minute_candles.index)
-        minute_candles = minute_candles[["Datetime", "Open", "High", "Low", "Close", "Volume"]]
-
-        tf_candle = self.loader._timeframe_setter(minute_candles, tf, keep_last_row=True)
-        return tf_candle
-
-    def load_existing_asset(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Sets the trading data to an already existing dataframe, passed in as an argument"""
-        self.df = df
-        return self.df
-
-    def check_rule_1(self, client, strategy, executor, position_amount):
-        if strategy.rule_1_buy_enter(-1) and position_amount == 0:
-            trade_info = executor.enter_market(client, self.symbol, "BUY", self.capital, self.leverage, 1)
-        elif strategy.rule_1_buy_exit(-1) and position_amount > 0:
-            trade_info = executor.exit_market(client, self.symbol, 1, position_amount)
-        elif strategy.rule_1_short_enter(-1) and position_amount == 0:
-            trade_info = executor.enter_market(client, self.symbol, "SELL", self.capital, self.leverage, 1)
-        elif strategy.rule_1_short_exit(-1) and position_amount < 0:
-            trade_info = executor.exit_market(client, self.symbol, 1, position_amount)
-
-    def check_rule_2(self, client, strategy, executor, sensitivity, position_amount):
-        if strategy.rule_2_buy_enter(-1, sensitivity) and position_amount == 0:
-            trade_info = executor.enter_market(client, self.symbol, "BUY", self.capital, self.leverage, 2)
-        elif strategy.rule_2_short_enter(-1, sensitivity) and position_amount == 0:
-            trade_info = executor.enter_market(client, self.symbol, "SELL", self.capital, self.leverage, 2)
-        elif strategy.rule_2_short_stop(-1) and position_amount < 0 and \
-                executor.live_trade_history.last_trade().rule == 2:
-            trade_info = executor.exit_market(client, self.symbol, 2, position_amount)
-        elif strategy.rule_2_buy_stop(-1) and position_amount > 0 and \
-                executor.live_trade_history.last_trade().rule == 2:
-            trade_info = executor.exit_market(client, self.symbol, 2, position_amount)
-
-    def check_rule_3(self, client, strategy, executor, position_amount):
-        if strategy.rule_3_buy_enter(-1) and position_amount == 0:
-            trade_info = executor.enter_market(client, self.symbol, "BUY", self.capital, self.leverage, 3)
-        elif strategy.rule_1_buy_exit(-1) and position_amount > 0:
-            trade_info = executor.exit_market(client, self.symbol, 1, position_amount)
-        elif strategy.rule_3_short_enter(-1) and position_amount == 0:
-            trade_info = executor.enter_market(client, self.symbol, "SELL", self.capital, self.leverage, 3)
-        elif strategy.rule_1_short_exit(-1) and position_amount < 0:
-            trade_info = executor.exit_market(client, self.symbol, 1, position_amount)
-
-    def start_trading(self, strategy: FabStrategy, executor, tf: int,  sensitivity=0, debug=False) -> str:
-        """
-        Starts the process of trading live. Each minute, the last row of the data is updated and Rule #2 is checked,
-        otherwise, it waits till the end of the timeframe where it gets the latest data before it checks the rest of the rules.
-        If it does see something following the rules, it will buy/short, given the initial parameters it has. (e.g. leverage, quantity)
-        This process continues indefinetly, unless interrupted.
-
-        Returns None.
-        """
-
-        raise Exception("Need to review method before running ")
-
-        client = self.binance
-        strategy.load_data(self.df)
-        strategy.update_moving_averages()
-
-        self.check_on_switch()
-
-        while self.start != False:
-            # getting minute candle disparity from real time data
-            minute_disparity = Helper.calculate_minute_disparity(self.df, tf)
-
-            if Helper.change_in_clock_minute() and minute_disparity <= tf:
-                df_row = self.get_current_tf_candle(minute_disparity)
-                position_amount = self.get_position_amount(self.symbol)
-                strategy.load_data(self.df.append(df_row))
-                strategy.update_moving_averages()
-
-                # Checking only Rule 2, because it needs a minute by minute check.
-                self.check_rule_2(client, strategy, executor, sensitivity, position_amount)
-
-                time.sleep(50)
-
-            elif minute_disparity > tf:
-                # Updating data using Binance API instead of appending the completed final row from the above code
-                self._update_data(math.floor(minute_disparity), self.symbol)
-                position_amount = self.get_position_amount(self.symbol)
-                strategy.load_data(self.df)
-                strategy.update_moving_averages()
-
-                self.check_rule_1(client, strategy, executor, position_amount)
-                self.check_rule_3(client, strategy, executor, position_amount)
-
-                time.sleep(1)
-
-            self.check_on_switch()
-
-        return "Trading Stopped"
-    
-    def get_current_trade_progress(self, key=(), printout=True) -> pd.DataFrame:
-        """
-        Returns something like
-
-            symbol  side  enter_price    size  usd size  current_price   pnl (%)   pnl (USD)
-        0   ETHUSDT  SELL   3981.93000   0.002      7.96    3882.784542  1.024386   0.19416
-        1  CELRUSDT   BUY      0.08166  73.000      5.96       0.072870  0.891912   -0.64420
-        2   XRPUSDT   BUY      0.81420   7.300      5.94       0.798600  0.980350   -0.11677
-
-        """
-        if printout:
-            print("Checking Current Trade Progress.... ")
+    def get_current_trade_progress(self, key=()) -> pd.DataFrame:
         if len(key)==0:
             key = self.key
-
-        positions = self.binance.futures_position_information()
-        pnl = 1
-        portfolio_pnl = 0
-        current_positions = pd.DataFrame(columns = ['symbol', 'side', 'enter_price', 'size', 'usd size', 'current_price', 'pnl (%)' , 'pnl (USD)'])
-        for symbol_info in positions:
-            position_size = float(symbol_info['positionAmt'])
-            if position_size == 0:
-                continue
-            symbol = symbol_info['symbol']
-            side = 'BUY' if position_size > 0 else 'SELL'
-            enter_price = float(symbol_info['entryPrice'])
-            last_price = float(symbol_info['markPrice'])
-            if side == 'SELL':
-                pnl = Helper.calculate_short_profitability(enter_price, last_price, 0.99975, percentage=True)
-            elif side == 'BUY':
-                pnl = Helper.calculate_long_profitability(enter_price, last_price, 0.99975, percentage=True)
-            usd_size = abs(round(position_size * enter_price, 2))
-            pnl_usd = usd_size*(pnl/100)
-            current_positions = current_positions.append(pd.DataFrame([[symbol, side, enter_price, abs(position_size), usd_size, last_price, pnl, pnl_usd]],
-                                                            columns = ['symbol', 'side', 'enter_price', 'size', 'usd size', 'current_price', 'pnl (%)' , 'pnl (USD)']),
-                                                ignore_index=True)
-            current_positions['position share'] = current_positions['usd size'] / current_positions['usd size'].sum()
-            portfolio_pnl = (current_positions['position share']*current_positions['pnl (%)']).sum()
             
-        if len(current_positions) == 0:
-            return current_positions
-        current_positions = current_positions.round(2)
+        df = pd.DataFrame(self.binance.futures_position_information())
+        df[['positionAmt', 'entryPrice', 'markPrice']] = df[['positionAmt', 'entryPrice', 'markPrice']].astype(float)
+        df = df[df['positionAmt'] != 0][['symbol', 'positionAmt', 'entryPrice', 'markPrice']].reset_index(drop=True)
+        df = df.rename({'positionAmt':'size', 'entryPrice':'enter price', 'markPrice':'current price'}, axis=1)
+        df['side'] = np.where(df['size']>0,'BUY', 'SELL')
+        df['size'] = df['size'].abs()
+        df['usd size'] = df['size']*df['enter price']
+
+        short_profitability = ((0.9996 ** 2) * (2 - df['current price'] / df['enter price']) - 1)*100
+        long_profitability = ((0.9996 ** 2) * (df['current price'] / df['enter price']) - 1)*100
+
+        df['pnl (%)'] = np.where(df['side']=='SELL', short_profitability,long_profitability)
+        df['pnl (USD)'] = df['usd size']*(df['pnl (%)']/100)
+        df['share'] = df['usd size'] / df['usd size'].sum()
+        df = df.round(2)
+        df = df[['symbol', 'side', 'enter price', 'size', 'usd size', 'current price', 'pnl (%)', 'pnl (USD)', 'share']]
+
+        current_positions = df
 
         if type(key) != type(None):
             recent_signals = pd.read_csv(r"C:\Users\haseab\Desktop\Python\PycharmProjects\FAB\local\Workers\Recent signals.txt")
             current_positions['tf'] = [int(recent_signals.set_index('symbol').loc[symbol, 'tf']) for symbol in current_positions['symbol'].values]
             current_positions = self.key[['win loss rate', 'avg pnl']].reset_index().merge(current_positions, on=['symbol','tf'])
-            
+
         self.current_positions = current_positions
-        if printout:
-            print(f"Portfolio Profit: {round(portfolio_pnl,2)}%")
-            display(current_positions)
         return current_positions
 
     def _check_trade_close(self, screener, current_positions):
@@ -492,9 +248,9 @@ class Trader():
         self.order_history.to_csv("FAB Order History.csv")
         self.trade_replay.append(self.get_current_trade_progress(printout=False))
 
-    def calculate_remaining_capital(self, current_positions, capital, leverage):
+    def calculate_remaining_capital(self, current_positions, capital):
         total_invested = current_positions['usd size'].sum() if len(current_positions) > 0 else 0
-        remaining_to_invest = capital*leverage - total_invested
+        remaining_to_invest = capital - total_invested
         return remaining_to_invest
 
     def get_positions_amount(self, list_of_symbols: list, full_close=False, divide_by=1, max_trades=3) -> list:
@@ -577,14 +333,14 @@ class Trader():
     def get_dividing_factor(self, current_positions, final_trades_to_enter, number_of_trades):
         dividing_factor = (len(current_positions) + len(final_trades_to_enter))/len(current_positions)
         minimum_threshold = current_positions['usd size'].sum()*0.95 // len(current_positions)
-        if dividing_factor > 1 and minimum_threshold > self.capital//number_of_trades:
-            print(minimum_threshold, self.capital//number_of_trades)
+        if dividing_factor > 1 and minimum_threshold > (self.capital)//number_of_trades:
+            print(minimum_threshold, (self.capital)//number_of_trades)
             return dividing_factor
         return 1
 
-    def optimize_trades(self, executor, current_positions, leverage, essential_metrics, trades_to_enter, number_of_trades):
+    def optimize_trades(self, executor, current_positions, trades_to_enter, number_of_trades):
         if len(current_positions) != 0:
-            # self.position_capital = float(self.binance.futures_account()['totalMarginBalance'])*leverage
+            self.position_capital = self.get_capital(include_pnl=True)
             trades_to_close, final_trades_to_enter = self._profit_optimization(self.key, current_positions, trades_to_enter, number_of_trades)
             
             if trades_to_close:
@@ -598,10 +354,12 @@ class Trader():
 
                 if positions_amount:
                     self.order_history = self.order_history.append(executor.exit_market(self.binance, positions_amount, reason='making space'))
-                # self.position_capital = float(self.binance.futures_account()['totalMarginBalance'])*leverage
+                self.position_capital = self.get_capital(include_pnl=True)
                 final_trades_to_enter = self.check_against_max_trade_size(final_trades_to_enter, current_positions, self.max_trade_size)
-                self.remaining_capital = self.calculate_remaining_capital(current_positions, self.capital, leverage)
-                self.order_history = self.order_history.append(executor.enter_market(self.binance, final_trades_to_enter, self.remaining_capital, len(final_trades_to_enter), reason='higher rank', max_trade_size = self.max_trade_size))
+                self.remaining_capital = self.calculate_remaining_capital(current_positions, self.position_capital)
+                self.order_history = self.order_history.append(executor.enter_market(self.binance, final_trades_to_enter, self.remaining_capital, 
+                                                                                        len(final_trades_to_enter), reason='higher rank', 
+                                                                                        max_trade_size = self.max_trade_size))
                 display(self.order_history)
             else:
                 print("No Trades made")
@@ -631,7 +389,7 @@ class Trader():
             final_trades_to_enter.append((symbol, side, rule))
         return final_trades_to_enter
 
-    def monitor_fab(self, screener, df_metrics, tfs, number_of_trades=3, leverage=0.001, recency=-1, additional_balance=100, max_trade_size=None):
+    def monitor_fab(self, screener, df_metrics, tfs, number_of_trades=3, leverage=1, recency=-1, additional_balance=0, max_trade_size=None):
         # self.order_history = pd.DataFrame()
         self.load_account()
         executor = self.executor
@@ -657,9 +415,9 @@ class Trader():
 
                 self.close_any_old_trades(screener, executor, current_positions)
                 
-                remaining_capital = self.calculate_remaining_capital(current_positions, self.capital, leverage)
+                remaining_capital = self.calculate_remaining_capital(current_positions, self.capital)
                 
-                ## trades_to_enter is a list of lists (Ex. [('BANDUSDT', 'Short'), ('BCHUSDT', 'Short')]
+                ## trades_to_enter is a list of lists (Ex. [('BANDUSDT', 'Short', 'Rule2'), ('BCHUSDT', 'Short', 'Rule 1')]
                 ## df_recent_signals is a regular screener dataframe
         
                 trades_to_enter, recent_signals = screener.top_trades(trader=self, df_metrics=df_metrics, tfs=tfs, n=number_of_trades, recency=recency)
@@ -685,7 +443,7 @@ class Trader():
                     print("Leverage: ", self.leverage)
                     print("Trades to Enter: ", trades_to_enter)
                     print("Max Trades: ", number_of_trades)
-                    self.optimize_trades(executor, current_positions, self.leverage, essential_metrics, trades_to_enter, number_of_trades)
+                    self.optimize_trades(executor, current_positions, trades_to_enter, number_of_trades)
                 Helper.sleep(60)
                 now = Helper.current_minute_datetime()
                 print()
