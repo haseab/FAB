@@ -31,6 +31,8 @@ class Helper:
         
     @staticmethod
     def sig_fig(x: float, sig: int = 2) -> float:
+        if pd.isna(x):
+            return x
         """ Rounds to the number of significant digits indicated"""
         return round(x, sig - math.ceil(math.log10(abs(x))))
     @staticmethod

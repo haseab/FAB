@@ -1,9 +1,7 @@
-import math
-import os
+
 import time
 from datetime import datetime
 
-import dateparser
 import numpy as np
 import pandas as pd
 from binance.client import Client
@@ -79,11 +77,11 @@ class Trader():
         # self.ftx = FtxClient(api_key=API_KEY_FTX, api_secret=API_SECRET_FTX)
         return "Connected to Binance"
 
-    def get_capital(self, additional_balance=0, include_pnl=False):
-        if include_pnl:
-            return float(self.binance.futures_account()['totalMarginBalance']) * self.leverage
-        self.capital = float(self.binance.futures_account()['totalCrossWalletBalance']) + additional_balance
-        return self.capital * self.leverage
+    def get_capital(self, additional_balance=4944.2649865):
+        initial_margin = float(self.binance.futures_account()['totalInitialMargin'])
+        available_balance = float(self.binance.futures_account()['availableBalance'])
+        self.capital = (initial_margin + available_balance + additional_balance) * self.leverage
+        return self.capital
 
     def load_futures_trading_history(self, start_time, end_time=None):
         df = pd.DataFrame()
@@ -340,7 +338,7 @@ class Trader():
 
     def optimize_trades(self, executor, current_positions, trades_to_enter, number_of_trades):
         if len(current_positions) != 0:
-            self.position_capital = self.get_capital(include_pnl=True)
+            self.position_capital = self.get_capital()
             trades_to_close, final_trades_to_enter = self._profit_optimization(self.key, current_positions, trades_to_enter, number_of_trades)
             
             if trades_to_close:
@@ -354,7 +352,7 @@ class Trader():
 
                 if positions_amount:
                     self.order_history = self.order_history.append(executor.exit_market(self.binance, positions_amount, reason='making space'))
-                self.position_capital = self.get_capital(include_pnl=True)
+                self.position_capital = self.get_capital()
                 final_trades_to_enter = self.check_against_max_trade_size(final_trades_to_enter, current_positions, self.max_trade_size)
                 self.remaining_capital = self.calculate_remaining_capital(current_positions, self.position_capital)
                 self.order_history = self.order_history.append(executor.enter_market(self.binance, final_trades_to_enter, self.remaining_capital, 

@@ -132,7 +132,7 @@ class Illustrator:
         self.graph_df(df_graph, position_side=position_side, flat=flat, tid=tid, save=save)
         return df_graph
 
-    def graph_df(self, df_graph, position_side=None, sma=False, space=0, flat=False, tid=None, extra_mas=False, save=False):
+    def graph_df(self, df_graph, position_side=None, no_sma=False, space=0, flat=False, tid=None, extra_mas=False, save=False):
 
         if df_graph.index.name != 'date':
             df_graph = df_graph.reset_index(drop=True).set_index('date')
@@ -141,7 +141,7 @@ class Illustrator:
         except KeyError:
             df_graph = self.add_sma_to_df(df_graph, extra_mas=extra_mas)
 
-        df_graph, addplot = self.set_graph_style(df_graph, sma=sma)
+        df_graph, addplot = self.set_graph_style(df_graph, sma=not no_sma)
 
         figratio = (40, 15)
         if flat:

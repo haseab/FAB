@@ -296,7 +296,7 @@ class Analyzer:
     def get_pps_rate(self, pps_index, median=True):
         """PPS - Price per share"""
         if median:
-            return pps_index['pps'].median()
+            return Helper.sig_fig(pps_index['pps'].median(), 4)
         return pps_index['pps']
 
     def get_peak_pps_rate(self, pps_index, peak_index, mean=True):
@@ -307,7 +307,7 @@ class Analyzer:
             subset_df_mean = subset_df[subset_df.index <= peak_index.loc[tid, 'peak_id']].median()
             medians = medians.append(subset_df_mean)
         if mean:
-            return medians.mean()
+            return Helper.sig_fig(medians.mean(), 4)
         return medians
 
     def get_volatility_rate(self, volatility_index, median=True):
@@ -317,7 +317,7 @@ class Analyzer:
 
     def get_volume_rate(self, volume_index, median=True):
         if median:
-            return volume_index['volume'].median()
+            return Helper.sig_fig(volume_index['volume'].median(), 4)
         return volume_index['volume']
 
     def get_peak_volume_rate(self, volume_index, peak_index, mean=True):
@@ -327,7 +327,7 @@ class Analyzer:
             subset_df_mean = subset_df[subset_df.index <= peak_index.loc[tid, 'peak_id']].median()
             medians = medians.append(subset_df_mean)
         if mean:
-            return medians.mean()
+            return Helper.sig_fig(medians.mean(), 4)
         return medians
 
     def get_num_candles_to_peak(self, candle_index, peak_index, median=True):
