@@ -4,8 +4,8 @@ from trade import Trade
 class TradeHistory:
     """Turning the Trading history into an object. This way, the trade information is more legible."""
 
-    def __init__(self):
-        self.allTrades = [["List of Trades", None, None, None, None]]
+    def __init__(self, lst=None):
+        self.allTrades = lst if lst else [["List of Trades", None, None, None, None, None]]
 
     def first_trade(self):
         if len(self.allTrades) > 2:
@@ -14,8 +14,8 @@ class TradeHistory:
     def last_trade(self):
         return Trade(self.allTrades[-1])
 
-    def append(self, trade: Trade) -> bool:
-        self.allTrades.append(trade)
+    def append(self, list_object) -> bool:
+        self.allTrades.append(Trade(list_object))
         return True
 
     def convert_list(lst):

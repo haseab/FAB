@@ -3,11 +3,14 @@ class Trade:
 
     def __init__(self, trade_info):
         self.trade_info = trade_info
-        self.side = trade_info[0] if len(trade_info) == 5 else None
-        self.status = trade_info[1] if len(trade_info) == 5 else None
-        self.datetime = trade_info[2] if len(trade_info) == 5 else None
-        self.price = trade_info[3] if len(trade_info) == 5 else None
-        self.rule = trade_info[4] if len(trade_info) == 5 else None
+        if len(trade_info) != 6:
+            raise Exception('Trade List is not in proper format!', trade_info)
+        self.index = trade_info[0] 
+        self.side = trade_info[1] 
+        self.status = trade_info[2] 
+        self.datetime = trade_info[3] 
+        self.price = trade_info[4]
+        self.rule = trade_info[5] 
 
     def __len__(self):
         return len(self.trade_info)

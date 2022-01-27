@@ -15,6 +15,7 @@ from dataloader import _DataLoader
 from fab_strategy import FabStrategy
 from helper import Helper
 from illustrator import Illustrator
+from trade import Trade
 from trading_history import TradeHistory
 
 
@@ -126,13 +127,14 @@ class Backtester:
 
         if all_data:
             df = self.loader.sql.SELECT(f"* FROM {table_name} WHERE SYMBOL = '{symbol}' AND TF = '1'", cursor)
-
         else:
             start_date = self.start_date if not start_date else start_date
             end_date = str(datetime.now())[:19] if not end_date else end_date
             df = self.loader.sql.SELECT(f"* FROM {table_name} WHERE SYMBOL = '{symbol}' AND TF = '1' AND DATE "
-                                        f"BETWEEN '{start_date}' AND '{end_date}' ORDER BY timestamp", cursor)
+                                        f"BETWEEN '{start_date}' AND '{end_date}'", cursor)
+                                    
         # df = df.drop('id', axis=1)
+        df = df.sort_values('timestamp')
         df['date'] = [np.datetime64(date) for date in df['date'].values]
         df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(
             float)
@@ -172,10 +174,10 @@ class Backtester:
         elif strategy.rule_2_short_enter(i) and last_trade.status != "Enter":
             self.trade_history.append([i+1, "Short", "Enter", list_of_str_dates[i+1], strategy.close[i]*(1-strategy.allowance), "Rule 2"])
 
-        if strategy.rule_2_buy_stop_absolute(i) and last_trade.rule == "Rule 2" and last_trade.side == "Long" and last_trade.status == "Enter":
+        elif strategy.rule_2_buy_stop_absolute(i) and last_trade.rule == "Rule 2" and last_trade.side == "Long" and last_trade.status == "Enter":
             self.trade_history.append([i+1, "Long", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 2"])
 
-        if strategy.rule_2_short_stop_absolute(i) and last_trade.rule == "Rule 2" and last_trade.side == "Short" and last_trade.status == "Enter":
+        elif strategy.rule_2_short_stop_absolute(i) and last_trade.rule == "Rule 2" and last_trade.side == "Short" and last_trade.status == "Enter":
             self.trade_history.append([i+1, "Short", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 2"])
 
         elif strategy.rule_2_short_stop(i) and last_trade.rule == "Rule 2" and last_trade.side == "Short" and last_trade.status == "Enter":
@@ -183,7 +185,6 @@ class Backtester:
 
         elif strategy.rule_2_buy_stop(i) and last_trade.rule == "Rule 2" and last_trade.side == "Long" and last_trade.status == "Enter":
             self.trade_history.append([i+1, "Long", "Exit", list_of_str_dates[i+1], strategy.close[i], "Rule 2"])
-
 
     def check_rule_3(self, strategy, i, list_of_str_dates):
         last_trade = self.trade_history.last_trade()
@@ -219,11 +220,11 @@ class Backtester:
             # raise Exception(start_datetime, trade_enter_datetime, trade_enter_datetime_2)
             df = self.df.reset_index()
             trade_df = df[df['date'].between(start_datetime, end_datetime)].copy()
-            df_tf = self.loader._timeframe_setter(trade_df, tf, drop_last_row=False).reset_index()
+            df_tf = self.loader._timeframe_setter(trade_df, tf, keep_last_row=True).reset_index()
 
             if test_df:
                 pre_trade_df = df[df['date'].between(start_datetime, trade_enter_datetime)].copy()
-                pre_trade_df_tf = self.loader._timeframe_setter(pre_trade_df, tf, drop_last_row=False).reset_index()
+                pre_trade_df_tf = self.loader._timeframe_setter(pre_trade_df, tf, keep_last_row=True).reset_index()
                 df_graph = self.illustrator.add_sma_to_df(pre_trade_df_tf).set_index('date')
 
                 self.new = pre_trade_df
@@ -259,7 +260,7 @@ class Backtester:
             exit_datetime += + pd.Timedelta(10*base_tf, 'minutes')
             trade_enter_datetime = exit_datetime
             df_object = object.df[object.df['date'].between(start_datetime, exit_datetime)].copy()
-        df_object_tf = self.loader._timeframe_setter(df_object, tf, drop_last_row=False).reset_index()
+        df_object_tf = self.loader._timeframe_setter(df_object, tf, keep_last_row=True).reset_index()
         # print(df_object_tf)
 
         if len(df_object_tf) < 280:
@@ -271,7 +272,7 @@ class Backtester:
         if btc:
             print(f"Symbol: {self.symbol[:-4] + object.symbol[:3]}")
             df_symbol = self.df[self.df['date'].between(start_datetime, trade_enter_datetime)].copy()
-            df_symbol_tf = self.loader._timeframe_setter(df_symbol, tf, drop_last_row=False).reset_index()
+            df_symbol_tf = self.loader._timeframe_setter(df_symbol, tf, keep_last_row=True).reset_index()
             df_btc = df_symbol_tf[['open', 'high', 'low', 'close']] / df_object_tf[['open', 'high', 'low', 'close']]
             df_btc[['symbol', 'tf', 'timestamp', 'date']] = df_symbol_tf[['symbol', 'tf', 'timestamp', 'date']]
             # print(df_object_tf, df_btc)
@@ -326,17 +327,24 @@ class Backtester:
                                  adjust_right_view=shift, base_tf=base_tf, description= descriptions, btc=btc, tf=adjusted_tf)
         return df_graph, df_bench
     
-    def optimal_tf_calculator(self, symbol_list, tf_list, delay_list, rule, side):
+    def optimal_tf_calculator(self, symbols_list, tf_list, delay_list):
         df = pd.DataFrame()
-        for symbol in symbol_list:
+        for symbol in symbols_list:
             self.loader = _DataLoader(db=True)
             self.load_backtesting_data(symbol=symbol, all_data=True)
+            if len(self.df) == 0:
+                continue
             for tf in tf_list:
                 for delay in delay_list:
                     print(symbol, tf, delay)
                     self.start_backtesting(tf, delay=delay)
-                    row = self.generate_asset_metrics(self.detailed_th, f'Rule {rule}', side, delay=delay)
-                    df = df.append(row)
+                    if len(self.trade_history) in [0,1,2]:
+                        continue
+                    for rule in [1, 2, 3]:
+                        for side in ['Long', 'Short']:
+                            df = pd.concat([df, self.generate_asset_metrics(self.detailed_th, f'Rule {rule}', side, delay=delay)])
+            print('saved', symbol)
+            df.to_csv(f"Full TF Delay Backtest {symbols_list[0]} to {symbols_list[-1]}.csv")
         return df
 
     def optimal_delay_calculator(self, symbol_list, delay_list, tf, rule, side):
@@ -363,14 +371,14 @@ class Backtester:
                 df = df.append(row)
         return df
 
-    def test_your_intuition(self, df_th, rule, limit=100, offset=0, adjust_left_view=200, adjust_right_view=250, show_answers=False, flat=True,
+    def test_your_intuition(self, df_th, limit=100, offset=0, adjust_left_view=200, adjust_right_view=250, show_answers=False, flat=True,
                             tids=None, benchmark=None, btc=False, refresh_rate=0.1, skip_rate=1, save=False, space=50):
-        dic = {1: 'Rule 1', 2: 'Rule 2', 3: 'Rule 3'}
         df_th = df_th.set_index('tid')
         self.my_trades = []
-        df_th = df_th[df_th['rule'] == dic[rule]]
+
         base_tf = df_th['tf'].iloc[0]
         adjusted_tf = None
+        rule = df_th['rule'].iloc[0]
 
         random.seed(1)
         if not tids:
@@ -388,7 +396,7 @@ class Backtester:
 
             print(f"Trade {i} of {len(tids)} ")
             print(f"Trade id: {tid}")
-            df_graph = self.graph_trade(tid=tid, rule=rule, adjust_left_view=adjust_left_view,df_th=df_th.reset_index(),
+            df_graph = self.graph_trade(tid=tid, adjust_left_view=adjust_left_view,df_th=df_th.reset_index(),
                                         adjust_right_view=adjust_right_view, data_only=True).reset_index()
 
             # self.illustrator.graph_df(df_graph[df_graph['date'] < enter_datetime + 8*timedelta(minutes=base_tf)].set_index('date'), space=space, flat=flat)
@@ -517,7 +525,11 @@ class Backtester:
         return self.trade_history
 
     def create_trade_history_table(self, trade_history_list):
-        test_th = pd.DataFrame(trade_history_list[1:], columns=['index', 'side', 'enter', 'date', 'price', 'rule'])
+        if len(trade_history_list) in [0,1,2]:
+            return pd.DataFrame(columns=['tid', 'enter_index', 'exit_index', 'enter_date', 'exit_date', 'rule', 'side', 
+                                        'symbol', 'tf', 'enter_price', 'exit_price', 'candles'])
+
+        test_th = pd.DataFrame(np.array(trade_history_list[1:]), columns=['index', 'side', 'enter', 'date', 'price', 'rule'])
 
         initial_columns = ['index', 'side', 'enter', 'date', 'price', 'rule']
         enter_columns = ['enter_index', 'side', 'enter', 'enter_date', 'enter_price', 'rule']
@@ -541,6 +553,10 @@ class Backtester:
         df['tf'] = [self.tf]*len(df_enter)
 
         df[['enter_date','exit_date']] = df[['enter_date','exit_date']].astype('datetime64')
+        df[['enter_index','exit_index', 'tf']] = df[['enter_index','exit_index', 'tf']].astype('int64')
+        df[['enter_price','exit_price']] = df[['enter_price','exit_price']].astype('float64').round(5)
+        
+        self.test = df
         df['candles'] = df['exit_index']-df['enter_index'] + 1
         # df['candles'] = ((df['exit_date'] - df['enter_date']) / np.timedelta64(self.tf, 'm') + 1).astype(int)
         df = df[['tid', 'enter_index', 'exit_index', 'enter_date', 'exit_date', 'rule', 'side', 'symbol', 'tf', 'enter_price', 'exit_price', 'candles']]
@@ -549,7 +565,6 @@ class Backtester:
     def bridge_table_creator(self, df_candles, df_th):
         df_candle_id = df_candles.reset_index()['candle_id']
         bridge = pd.DataFrame(columns=['tid', 'candle_id'])
-        start = time.perf_counter()
 
         left_array, right_array = np.array([]), np.array([])
     
@@ -565,10 +580,11 @@ class Backtester:
         self.bridge = bridge.reset_index(drop=True)
         return bridge.reset_index(drop=True)
 
-    def generate_detailed_trading_history(self, df_candles=None, df_th=None):
-        df_candles = self.df_tf if type(df_candles) == type(None) else df_candles
-        df_th = self.df_th if type(df_th) == type(None) else df_th
+    def generate_detailed_trading_history(self, df_candles, df_th):
+        if len(df_th) == 0:
+            return pd.DataFrame(columns=['tid', 'candle_id'])
 
+        df_candles = df_candles.reset_index().set_index('candle_id')
         bridge = self.bridge_table_creator(df_candles, df_th)
 
         df_th_merge = df_th[['tid', 'symbol', 'tf', 'enter_price', 'exit_price', 'rule', 'side', 'candles']]
@@ -656,19 +672,19 @@ class Backtester:
         unrealized_rrr               = analyzer.get_unrealized_rrr(peak_unrealized_profit_index, peak_unrealized_loss_index)
         average_rrr                  = analyzer.get_average_rrr(average_win, average_loss)
         amount_of_data               = analyzer.get_amount_of_data(trade_index)
+        avg_pnl                      = profitability**(1/amount_of_data)
 
-        df_metrics = pd.DataFrame([[symbol, timeframe, delay, rule, side, unrealized_rrr, win_loss_rate, amount_of_data, average_rrr, profitability,
-                                    average_win, longest_run, longest_drawdown, peak_unrealized_loss, average_loss, volume, largest_profit,
-                                    profit_rate,loss_rate, peak_profit_rate, peak_loss_rate, pps_rate, peak_unrealized_profit,
-                                    num_candles_to_peak,
+        df_metrics = pd.DataFrame([[symbol, timeframe, delay, rule, side, amount_of_data, win_loss_rate, profitability, avg_pnl,
+                                    longest_drawdown, longest_run, average_rrr, unrealized_rrr, num_candles_to_peak, average_win, peak_unrealized_loss, 
+                                    average_loss, volume, largest_profit, profit_rate,loss_rate, peak_profit_rate, peak_loss_rate, pps_rate, peak_unrealized_profit,
                                     peak_pps_rate, volatility_rate, volume_rate, peak_volume, peak_volume_rate, largest_loss]],
 
-                            columns=['symbol', 'tf', 'delay', 'rule_no.', 'side', "unrealized rrr", "win loss rate", "amount of data", "average rrr",
-                                     "profitability", "average win", "longest_run", "longest drawdown", "peak unreal. loss", "average loss", "volume",
-                                     "largest profit", "profit rate", "loss rate", "peak profit rate", "peak loss rate", "pps rate", 
-                                     "peak unreal. profit", "num candles to peak","peak pps rate", "volatility rate", "volume rate", "peak volume", "peak volume rate",
-                                     "largest loss"])
-        self.df_metrics = df_metrics.set_index(['symbol', 'tf', 'rule_no.'])
+                            columns=['symbol', 'tf', 'delay', 'rule_no.', 'side', "amount of data", "win loss rate", "profitability", 'avg pnl', 
+                                     "longest drawdown", "longest_run", "average rrr", "unrealized rrr", "num candles to peak", "average win", "peak unreal. loss", 
+                                     "average loss", "volume", "largest profit", "profit rate", "loss rate", "peak profit rate", "peak loss rate", "pps rate", 
+                                     "peak unreal. profit", "peak pps rate", "volatility rate", "volume rate", "peak volume", "peak volume rate", "largest loss"])
+        # df_metrics['avg pnl'] = df_metrics['profitability']**(1/df_metrics['amount of data'])
+        self.df_metrics = df_metrics.set_index(['symbol', 'tf', 'rule_no.', 'delay', 'side'])
         return self.df_metrics
 
     def start_backtesting(self, tf=None, delay=0, sensitivity=0, v2=False):
@@ -677,13 +693,13 @@ class Backtester:
         self.set_timeframe(tf)
 
         self.df_tf = self.load_timeframe_data()
-        print("Loaded Timeframe data", time.time()-start)
+        # print("Loaded Timeframe data", time.time()-start)
         trade_history = self.calculate_trading_history(delay=delay, sensitivity=sensitivity, v2=v2)
-        print("Calculated Trading History", time.time()-start)
+        # print("Calculated Trading History", time.time()-start)
         self.df_th = self.create_trade_history_table(trade_history)
-        print("Trading History Table Created", time.time()-start)
-        self.detailed_th = self.generate_detailed_trading_history(self.df).set_index(['tid', 'candle_id'])
-        print("Detailed Th created", time.time()-start)
+        # print("Trading History Table Created", time.time()-start)
+        self.detailed_th = self.generate_detailed_trading_history(self.df_tf, self.df_th).set_index(['tid', 'candle_id'])
+        # print("Detailed Th created", time.time()-start)
         # self.df_th = self.add_metrics_to_trading_history(self.df_th)
         return self
 
